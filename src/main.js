@@ -68,12 +68,26 @@ function renderApp(pagina) {
     <div id="contenido"></div>
   `
 
-  document.getElementById('btn-logout').addEventListener('click', async () => {
+document.getElementById('btn-logout')?.addEventListener('click', async () => {
     await supabase.auth.signOut()
     perfilGlobal = null
     renderLogin()
   })
 
+  document.getElementById('btn-logout-mobile')?.addEventListener('click', async () => {
+    await supabase.auth.signOut()
+    perfilGlobal = null
+    renderLogin()
+  })
+
+  window.toggleMenu = () => {
+    const menu = document.getElementById('menu-mobile')
+    menu.classList.toggle('hidden')
+  }
+
+  document.getElementById('btn-menu-mobile')?.addEventListener('click', () => {
+    window.toggleMenu()
+  })
   window.navigate = (p) => renderApp(p)
 
   const contenido = document.getElementById('contenido')
