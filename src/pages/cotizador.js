@@ -1,4 +1,4 @@
-import { supabase } from '../supabase.js'
+import { supabase, SHEETS_URL } from '../supabase.js'
 import { generarPDF } from '../pdf.js'
 
 const db = {
@@ -1159,6 +1159,60 @@ await supabase.from('cotizacion_items').insert(
     const btnPdf = document.getElementById('btn-pdf')
     btnPdf.disabled = false
     btnPdf.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
+    // Enviar a Google Sheets
+    try {
+      const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
+      const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
+      const commBase = document.getElementById('comm-base').value
+      const utilidad = total - costoTot
+      const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
+
+      const itemsSheets = items.map(it => {
+        const venta = ventaItem(it)
+        const cantidad = it.tipo === 'panel' ? it.m2 : it.cant
+        const costoUnit = it.costo_unit || 0
+        const costoTotal = costoUnit * cantidad
+        return {
+          descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+          tipo: it.tipo,
+          cantidad,
+          costo_unit: costoUnit,
+          costo_total: parseFloat(costoTotal.toFixed(2)),
+          precio_unit: parseFloat((cantidad > 0 ? venta / cantidad : 0).toFixed(2)),
+          venta_total: parseFloat(venta.toFixed(2)),
+          utilidad: parseFloat((venta - costoTotal).toFixed(2)),
+          opcional: it.opcional
+        }
+      })
+
+      const empresa = empresas?.find(e => e.id === document.getElementById('sel-empresa')?.value)
+
+      await fetch(SHEETS_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: 'cotizacion',
+          numero: cot.numero,
+          fecha: document.getElementById('campo-fecha').value,
+          cliente_nombre: clienteData.nombre,
+          cliente_obra: clienteData.obra || '',
+          empresa_nombre: empresa?.nombre || 'DACAR SRL',
+          vendedor: perfilGlobal?.full_name || '',
+          estado: 'borrador',
+          costo_neto: parseFloat(costoTot.toFixed(2)),
+          venta_bruta: parseFloat(ventaTot.toFixed(2)),
+          total_final: parseFloat(total.toFixed(2)),
+          utilidad: parseFloat(utilidad.toFixed(2)),
+          margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
+          descuento_pct: descG,
+          comision_usd: parseFloat(commUsd.toFixed(2)),
+          items: itemsSheets
+        })
+      })
+    } catch (e) {
+      console.log('Error enviando a Sheets:', e)
+    }
     const msgEl = document.getElementById('msg-cot')
     msgEl.textContent = `✅ Cotización #${cot.numero} guardada.`
     msgEl.classList.remove('hidden')
