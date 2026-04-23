@@ -103,7 +103,7 @@ export async function renderCotizador(contenedor) {
 items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
 
   // Ver si hay una cotización para editar
-  const editar = sessionStorage.getItem('editar_cotizacion')
+const editar = sessionStorage.getItem('editar_cotizacion')
   if (editar) {
     sessionStorage.removeItem('editar_cotizacion')
     const datos = JSON.parse(editar)
@@ -111,20 +111,76 @@ items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
     // Pre-cargar cliente
     if (datos.cliente) {
       clienteId = datos.cliente.id
-      clienteData = { nombre: datos.cliente.nombre, obra: datos.cliente.obra, dir: datos.cliente.direccion }
+      clienteData = {
+        nombre: datos.cliente.nombre,
+        obra: datos.cliente.obra || '',
+        dir: datos.cliente.direccion || ''
+      }
     }
 
-    // Pre-cargar items
-    items = datos.items.map(it => ({
-      tipo: it.descripcion.toLowerCase().includes('flete') ? 'flete' : 'accesorio',
-      descripcion: it.descripcion.replace(' [OPCIONAL]', ''),
-      cant: it.cantidad,
-      costo_unit: it.precio_unitario,
-      dto: 0,
-      opcional: it.descripcion.includes('[OPCIONAL]')
-    }))
-  }
-  const { data: clientes } = await supabase
+    // Pre-cargar ítems usando datos de notas
+    if (datos.items && datos.items.length) {
+      items = datos.items.map(it => {
+        const desc = it.descripcion || ''
+        const esOpcional = desc.includes('[OPCIONAL]')
+        const descLimpia = desc.replace(' [OPCIONAL]', '').trim()
+
+        // Leer datos extendidos desde notas
+        let extra = {}
+        try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
+
+        // Si es un panel con datos completos
+        if (extra.tipo === 'panel' && extra.modelo) {
+          return {
+            tipo: 'panel',
+            descripcion: descLimpia,
+            modelo: extra.modelo,
+            espesor: extra.espesor,
+            term: extra.term,
+            color: extra.color || '',
+            m2: extra.m2 || parseFloat(it.cantidad) || 0,
+            chapas: extra.chapas || null,
+            largo: extra.largo || null,
+            costo_unit: extra.costo_unit || 0,
+            dto: extra.dto || 0,
+            opcional: esOpcional
+          }
+        }
+
+        // Si es flete
+        if (extra.tipo === 'flete' || descLimpia.toLowerCase().includes('flete')) {
+          return {
+            tipo: 'flete',
+            descripcion: descLimpia,
+            cant: parseFloat(it.cantidad) || 1,
+            costo_unit: extra.costo_unit || 0,
+            dto: extra.dto || 0,
+            opcional: esOpcional
+          }
+        }
+
+        // Accesorio
+        return {
+          tipo: 'accesorio',
+          descripcion: descLimpia,
+          cant: parseFloat(it.cantidad) || 1,
+          costo_unit: extra.costo_unit || 0,
+          dto: extra.dto || 0,
+          opcional: esOpcional
+        }
+      })
+    }
+
+// Pre-cargar márgenes y renderizar después del HTML
+    setTimeout(() => {
+      const mkPan = document.getElementById('mk-pan')
+      const dtoGer = document.getElementById('dto-ger')
+      if (mkPan) mkPan.value = datos.margen_pct || 30
+      if (dtoGer) dtoGer.value = datos.descuento_pct || 0
+      renderItems()
+      recalcular()
+    }, 300)
+    }  const { data: clientes } = await supabase
     .from('clientes').select('id,nombre,obra,direccion').order('nombre')
 
   contenedor.innerHTML = `
@@ -207,6 +263,7 @@ items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
             <th class="px-2 py-2 text-right font-medium text-xs">PRECIO U$S</th>
             <th class="px-2 py-2 text-center font-medium text-xs">DTO%</th>
             <th class="px-2 py-2 text-right font-medium text-xs">SUBTOTAL</th>
+            <th class="px-2 py-2 text-right font-medium text-xs" style="background:#0c4a6e;">COSTO U$S</th>
             <th class="px-2 py-2 text-center font-medium text-xs">OPC</th>
             <th class="px-2 py-2"></th>
           </tr>
@@ -598,7 +655,7 @@ buscaCli.addEventListener('input', e =>
     document.getElementById('mm-m2').value = ''
   }
 
-  function buildTermOpts(modelo, espesor, prefijo) {
+function buildTermOpts(modelo, espesor, prefijo) {
     const terms = Object.keys(db[modelo].data[espesor])
     const foilInt = db[modelo].foilInt
     const selExt = document.getElementById(`${prefijo}-ext`)
@@ -608,21 +665,34 @@ buscaCli.addEventListener('input', e =>
     selExt.innerHTML = '<option value="">-- Elegí --</option>'
 
     if (foilInt) {
+      // MAXIMMA, WAVE LS, COVER LS
+      // Interior = FOIL fijo
+      // Exterior = chapa variable (PR/ZN/CI) → segundo componente del term FO/XX
       intFijo.classList.remove('hidden')
+      intFijo.querySelector('div') && (intFijo.querySelector('div').textContent = 'Foil de polipropileno (fijo)')
       intBlq.classList.add('hidden')
       const extCodes = [...new Set(terms.map(t => t.split('/')[1]))]
-      extCodes.forEach(code => selExt.add(new Option(labelExt[code] || code, code)))
+      extCodes.forEach(code => {
+        const label = code === 'PR' ? 'Prepintada' : code === 'ZN' ? 'Galvanizada' : code === 'CI' ? 'Cincalum' : code
+        selExt.add(new Option(label, code))
+      })
     } else {
-      intFijo.classList.add('hidden')
-      intBlq.classList.remove('hidden')
-      selExt.add(new Option('Prepintada (fija)', 'PR'))
+      // COVER LT, COVER LX, FRONT, SKIN
+      // Exterior = chapa variable (ZN/CI/PR) → segundo componente del term PR/XX
+      // Interior = Prepintada fija
+      intFijo.classList.remove('hidden')
+      intFijo.querySelector('div') && (intFijo.querySelector('div').textContent = 'Prepintada (fija)')
+      intBlq.classList.add('hidden')
+      // Exterior options son ZN, CI, PR del segundo componente
+      const extCodes = [...new Set(terms.map(t => t.split('/')[1]))]
+      extCodes.forEach(code => {
+        const label = code === 'PR' ? 'Prepintada' : code === 'ZN' ? 'Galvanizada' : code === 'CI' ? 'Cincalum' : code
+        selExt.add(new Option(label, code))
+      })
+      // Mostrar selector de color para exterior prepintada
       document.getElementById(`${prefijo}-color-blq`).classList.remove('hidden')
-      const intCodes = [...new Set(terms.map(t => t.split('/')[1]))]
-      intSel.innerHTML = '<option value="">-- Elegí --</option>'
-      intCodes.forEach(code => intSel.add(new Option(labelExt[code] || code, code)))
     }
   }
-
   function getPrecio(modelo, espesor, prefijo) {
     const foilInt = db[modelo]?.foilInt
     const extVal = document.getElementById(`${prefijo}-ext`).value
@@ -655,10 +725,8 @@ buscaCli.addEventListener('input', e =>
   }
   window.mpExt = () => {
     const m = document.getElementById('mp-modelo').value
-    if (db[m]?.foilInt) {
-      const extVal = document.getElementById('mp-ext').value
-      document.getElementById('mp-color-blq').classList.toggle('hidden', extVal !== 'PR')
-    }
+    const extVal = document.getElementById('mp-ext').value
+    document.getElementById('mp-color-blq').classList.toggle('hidden', extVal !== 'PR')
     mpCalcPrecio()
   }
   window.mpCalcPrecio = () => {
@@ -698,15 +766,13 @@ buscaCli.addEventListener('input', e =>
     buildTermOpts(m, e, 'mm')
     mmCalcPrecio()
   }
-  window.mmExt = () => {
+window.mmExt = () => {
     const m = document.getElementById('mm-modelo').value
-    if (db[m]?.foilInt) {
-      const extVal = document.getElementById('mm-ext').value
-      document.getElementById('mm-color-blq').classList.toggle('hidden', extVal !== 'PR')
-    }
+    const extVal = document.getElementById('mm-ext').value
+    document.getElementById('mm-color-blq').classList.toggle('hidden', extVal !== 'PR')
     mmCalcPrecio()
   }
-  window.mmCalcPrecio = () => {
+    window.mmCalcPrecio = () => {
     const m = document.getElementById('mm-modelo').value
     const e = document.getElementById('mm-esp').value
     if (!m || !e) return
@@ -725,19 +791,26 @@ buscaCli.addEventListener('input', e =>
     const extVal = document.getElementById(`${pfx}-ext`).value
     const intVal = foilInt ? null : document.getElementById(`${pfx}-int`).value
     if (!extVal) { alert('Elegí la terminación exterior'); return }
-    if (!foilInt && !intVal) { alert('Elegí la terminación interior'); return }
-
-    const term = foilInt ? `FO/${extVal}` : `PR/${intVal}`
+if (!foilInt && document.getElementById(`${pfx}-int-blq`).classList.contains('hidden') === false && !intVal) { alert('Elegí la terminación interior'); return }
+const term = foilInt ? `FO/${extVal}` : `PR/${extVal}`
     const costo = db[m]?.data[e]?.[term]
     if (!costo) { alert('Combinación no disponible'); return }
 
     const color = document.getElementById(`${pfx}-color-blq`).classList.contains('hidden')
       ? '' : document.getElementById(`${pfx}-color`).value
 
-    const extLabel = foilInt ? (labelExt[extVal] || extVal) : 'Prepintada'
-    const intLabel = foilInt ? 'Foil' : (labelExt[intVal] || intVal)
-    const colorTxt = color ? ` ${color}` : ''
-    const desc = `${m} ${e}mm | Ext: ${extLabel}${colorTxt} / Int: ${intLabel}`
+    let desc
+    if (foilInt) {
+      // FO/PR, FO/ZN, FO/CI → interior es Foil, exterior es la chapa
+      const extLabel = labelExt[extVal] || extVal
+      const colorTxt = color ? ` ${color}` : ''
+      desc = `${m} ${e}mm | Ext: ${extLabel}${colorTxt} / Int: Foil`
+    } else {
+      // PR/ZN, PR/CI, PR/PR → exterior es la chapa (ZN/CI/PR), interior es Prepintada
+      const extLabel = labelExt[intVal] || intVal
+      const colorTxt = color ? ` ${color}` : ''
+      desc = `${m} ${e}mm | Ext: ${extLabel}${colorTxt} / Int: Prepintada`
+    }
 
     let m2val, chapas = null, largo = null
 
@@ -751,11 +824,17 @@ buscaCli.addEventListener('input', e =>
       m2val = parseFloat((chapas * largo * db[m].ancho).toFixed(2))
     }
 
-    items.push({ tipo: 'panel', descripcion: desc, modelo: m, espesor: e, term, color,
-      m2: m2val, chapas, largo, costo_unit: costo, dto: 0, opcional: false })
+const nuevoItem = { tipo: 'panel', descripcion: desc, modelo: m, espesor: e, term, color,
+      m2: m2val, chapas, largo, costo_unit: costo, dto: 0, opcional: false }
 
-    cerrarModales(); renderItems(); recalcular()
-  }
+    if (window._editandoIndex !== undefined && window._editandoIndex !== null) {
+      items[window._editandoIndex] = nuevoItem
+      window._editandoIndex = null
+    } else {
+      items.push(nuevoItem)
+    }
+
+    cerrarModales(); renderItems(); recalcular()  }
 
   // Modal accesorio
   window.maSelChange = () => {
@@ -886,7 +965,8 @@ buscaCli.addEventListener('input', e =>
             OPC
           </button>
         </td>
-        <td class="px-1 py-2 text-center">
+        <td class="px-1 py-2 text-center" style="white-space:nowrap">
+          ${it.tipo === 'panel' ? `<button onclick="editarPanel(${i})" class="text-blue-500 hover:text-blue-700 font-bold text-xs mr-1">✏️</button>` : ''}
           <button onclick="elimItem(${i})" class="text-red-400 hover:text-red-600 font-bold text-sm">✕</button>
         </td>
       </tr>`
@@ -913,7 +993,52 @@ buscaCli.addEventListener('input', e =>
   window.editDto   = (i, v) => { items[i].dto = parseFloat(v) || 0; renderItems(); recalcular() }
   window.toggleOpc = (i)    => { items[i].opcional = !items[i].opcional; renderItems(); recalcular() }
   window.elimItem  = (i)    => { items.splice(i, 1); renderItems(); recalcular() }
+window.editarPanel = (i) => {
+    const it = items[i]
+    if (!it || it.tipo !== 'panel') return
 
+    // Abrir modal y precargar datos
+    limpiarModalPanel()
+    document.getElementById('modal-panel').classList.remove('hidden')
+
+    setTimeout(() => {
+      const selModelo = document.getElementById('mp-modelo')
+      selModelo.value = it.modelo
+      mpModelo()
+
+      setTimeout(() => {
+        const selEsp = document.getElementById('mp-esp')
+        selEsp.value = it.espesor
+        mpEsp()
+
+        setTimeout(() => {
+          const foilInt = db[it.modelo]?.foilInt
+          if (foilInt) {
+            const extCode = it.term.split('/')[1]
+            document.getElementById('mp-ext').value = extCode
+            document.getElementById('mp-color-blq').classList.toggle('hidden', extCode !== 'PR')
+            if (extCode === 'PR' && it.color) {
+              document.getElementById('mp-color').value = it.color
+            }
+          } else {
+            const intCode = it.term.split('/')[1]
+            document.getElementById('mp-int').value = intCode
+            if (it.color) document.getElementById('mp-color').value = it.color
+          }
+          mpCalcPrecio()
+
+          if (it.chapas) {
+            document.getElementById('mp-cant').value = it.chapas
+            document.getElementById('mp-largo').value = it.largo
+          }
+          mpCalcM2()
+
+          // Al confirmar, reemplaza el ítem en lugar de agregar
+          window._editandoIndex = i
+        }, 100)
+      }, 100)
+    }, 100)
+  }
   // ── RECALCULAR ────────────────────────────────────────────────────
   window.recalcular = function() {
     let costoTot = 0, ventaTot = 0, totalM2 = 0
@@ -977,19 +1102,30 @@ buscaCli.addEventListener('input', e =>
 
     if (error) { alert('Error al guardar: ' + error.message); return }
 
-    await supabase.from('cotizacion_items').insert(
-      items.map(it => ({
-        cotizacion_id: cot.id,
-        producto_id: null,
-        descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
-        cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
-        precio_unitario: (() => {
-          const q = it.tipo === 'panel' ? it.m2 : it.cant
-          return q > 0 ? ventaItem(it) / q : 0
-        })()
-      }))
-    )
-
+await supabase.from('cotizacion_items').insert(
+  items.map(it => ({
+    cotizacion_id: cot.id,
+    producto_id: null,
+    descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+    cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
+    precio_unitario: (() => {
+      const q = it.tipo === 'panel' ? it.m2 : it.cant
+      return q > 0 ? ventaItem(it) / q : 0
+    })(),
+    notas: JSON.stringify({
+      tipo: it.tipo,
+      modelo: it.modelo || null,
+      espesor: it.espesor || null,
+      term: it.term || null,
+      color: it.color || null,
+      m2: it.m2 || null,
+      chapas: it.chapas || null,
+      largo: it.largo || null,
+      costo_unit: it.costo_unit,
+      dto: it.dto || 0,
+    })
+  }))
+)
     const itemsCalculados = items.map(it => ({
       descripcion: it.descripcion,
       opcional: it.opcional,
