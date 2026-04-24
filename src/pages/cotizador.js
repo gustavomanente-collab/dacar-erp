@@ -1241,5 +1241,6 @@ console.error('Error al enviar a Sheets:', error)
 
 } // <-- Cierra la función principal renderCotizador()
 
-function esc(s) { 
-return String(s || '').replace(/'/g, "\\'") 
+function esc(s) {
+  return String(s || '').replace(/'/g, "\\'");
+}
