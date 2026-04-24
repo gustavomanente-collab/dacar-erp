@@ -4,6 +4,7 @@ import { renderNavbar } from './components/navbar.js'
 import { renderClientes } from './pages/clientes.js'
 import { renderCotizador } from './pages/cotizador.js'
 import { renderHistorial } from './pages/historial.js'
+import { renderFinanzas } from './pages/finanzas.js'
 
 const app = document.getElementById('app')
 let perfilGlobal = null
@@ -96,9 +97,11 @@ if (pagina === 'clientes') {
     renderClientes(contenido)
   } else if (pagina === 'cotizador') {
     renderCotizador(contenido)
-  } else if (pagina === 'historial') {
+} else if (pagina === 'historial') {
     renderHistorial(contenido)
-  }}
+  } else if (pagina === 'finanzas') {
+    renderFinanzas(contenido)
+    }}
 
 const { data: { session } } = await supabase.auth.getSession()
 if (session) {

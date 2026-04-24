@@ -44,9 +44,15 @@ export function renderNavbar(perfil) {
           📋 Cotizador
         </button>
         <button onclick="navigate('historial'); toggleMenu()"
+        <button onclick="navigate('finanzas'); toggleMenu()"
+          class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
+          💰 Finanzas
+        </button>
           class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
           📁 Historial
         </button>
+        <button onclick="navigate('finanzas')"
+          class="text-sm text-gray-600 hover:text-green-700 font-medium">Finanzas</button>
         <button id="btn-logout-mobile"
           class="w-full text-left px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 rounded-lg font-medium">
           🚪 Cerrar sesión

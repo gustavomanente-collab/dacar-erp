@@ -1076,7 +1076,7 @@ window.editarPanel = (i) => {
     } else { sugEl.classList.add('hidden') }
   }
 
-  // ── GUARDAR ───────────────────────────────────────────────────────
+// ── GUARDAR ───────────────────────────────────────────────────────
   document.getElementById('btn-guardar').addEventListener('click', async () => {
     if (!clienteId) { alert('Seleccioná un cliente'); return }
     if (!items.length) { alert('Agregá al menos un ítem'); return }
@@ -1102,30 +1102,31 @@ window.editarPanel = (i) => {
 
     if (error) { alert('Error al guardar: ' + error.message); return }
 
-await supabase.from('cotizacion_items').insert(
-  items.map(it => ({
-    cotizacion_id: cot.id,
-    producto_id: null,
-    descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
-    cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
-    precio_unitario: (() => {
-      const q = it.tipo === 'panel' ? it.m2 : it.cant
-      return q > 0 ? ventaItem(it) / q : 0
-    })(),
-    notas: JSON.stringify({
-      tipo: it.tipo,
-      modelo: it.modelo || null,
-      espesor: it.espesor || null,
-      term: it.term || null,
-      color: it.color || null,
-      m2: it.m2 || null,
-      chapas: it.chapas || null,
-      largo: it.largo || null,
-      costo_unit: it.costo_unit,
-      dto: it.dto || 0,
-    })
-  }))
-)
+    await supabase.from('cotizacion_items').insert(
+      items.map(it => ({
+        cotizacion_id: cot.id,
+        producto_id: null,
+        descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+        cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
+        precio_unitario: (() => {
+          const q = it.tipo === 'panel' ? it.m2 : it.cant
+          return q > 0 ? ventaItem(it) / q : 0
+        })(),
+        notas: JSON.stringify({
+          tipo: it.tipo,
+          modelo: it.modelo || null,
+          espesor: it.espesor || null,
+          term: it.term || null,
+          color: it.color || null,
+          m2: it.m2 || null,
+          chapas: it.chapas || null,
+          largo: it.largo || null,
+          costo_unit: it.costo_unit,
+          dto: it.dto || 0,
+        })
+      }))
+    )
+
     const itemsCalculados = items.map(it => ({
       descripcion: it.descripcion,
       opcional: it.opcional,
@@ -1159,6 +1160,7 @@ await supabase.from('cotizacion_items').insert(
     const btnPdf = document.getElementById('btn-pdf')
     btnPdf.disabled = false
     btnPdf.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
+
     // Enviar a Google Sheets
     try {
       const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
@@ -1185,42 +1187,59 @@ await supabase.from('cotizacion_items').insert(
         }
       })
 
-      const empresa = empresas?.find(e => e.id === document.getElementById('sel-empresa')?.value)
+      const empresa = typeof empresas !== 'undefined' ? empresas.find(e => e.id === document.getElementById('sel-empresa')?.value) : null;
+    
+      // Enviar via formulario oculto (evita CORS)
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = SHEETS_URL
+      form.target = 'sheets-iframe'
+      form.style.display = 'none'
 
-      await fetch(SHEETS_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo: 'cotizacion',
-          numero: cot.numero,
-          fecha: document.getElementById('campo-fecha').value,
-          cliente_nombre: clienteData.nombre,
-          cliente_obra: clienteData.obra || '',
-          empresa_nombre: empresa?.nombre || 'DACAR SRL',
-          vendedor: perfilGlobal?.full_name || '',
-          estado: 'borrador',
-          costo_neto: parseFloat(costoTot.toFixed(2)),
-          venta_bruta: parseFloat(ventaTot.toFixed(2)),
-          total_final: parseFloat(total.toFixed(2)),
-          utilidad: parseFloat(utilidad.toFixed(2)),
-          margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
-          descuento_pct: descG,
-          comision_usd: parseFloat(commUsd.toFixed(2)),
-          items: itemsSheets
-        })
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = 'payload'
+      input.value = JSON.stringify({
+        tipo: 'cotizacion',
+        numero: cot.numero,
+        fecha: document.getElementById('campo-fecha').value,
+        cliente_nombre: clienteData.nombre,
+        cliente_obra: clienteData.obra || '',
+        empresa_nombre: empresa?.nombre || 'DACAR SRL',
+        vendedor: typeof perfilGlobal !== 'undefined' ? perfilGlobal?.full_name || '' : '',
+        estado: 'borrador',
+        costo_neto: parseFloat(costoTot.toFixed(2)),
+        venta_bruta: parseFloat(ventaTot.toFixed(2)),
+        total_final: parseFloat(total.toFixed(2)),
+        utilidad: parseFloat(utilidad.toFixed(2)),
+        margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
+        descuento_pct: descG,
+        comision_usd: parseFloat(commUsd.toFixed(2)),
+        items: itemsSheets
       })
-    } catch (e) {
-      console.log('Error enviando a Sheets:', e)
+
+      form.appendChild(input)
+      document.body.appendChild(form)
+
+      const iframe = document.createElement('iframe')
+      iframe.name = 'sheets-iframe'
+      iframe.style.display = 'none'
+      document.body.appendChild(iframe)
+
+      form.submit()
+      setTimeout(() => {
+        form.remove()
+        iframe.remove()
+      }, 3000)
+
+    } catch (error) {
+      console.error('Error al enviar a Sheets:', error)
     }
-    const msgEl = document.getElementById('msg-cot')
-    msgEl.textContent = `✅ Cotización #${cot.numero} guardada.`
-    msgEl.classList.remove('hidden')
-  })
 
-  document.getElementById('btn-pdf').addEventListener('click', () => {
-    if (cotizacionGuardada) generarPDF(cotizacionGuardada)
-  })
+  }) // <-- Cierra el evento del botón guardar
+
+} // <-- Cierra la función principal renderCotizador()
+
+function esc(s) { 
+  return String(s || '').replace(/'/g, "\\'") 
 }
-
-function esc(s) { return String(s || '').replace(/'/g, "\\'") }
