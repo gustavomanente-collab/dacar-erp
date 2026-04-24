@@ -244,14 +244,6 @@ const editar = sessionStorage.getItem('editar_cotizacion')
         </div>
         <div>
           <label class="block text-xs text-gray-400 mb-1">Dto. gerencial %</label>
-          <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Impuesto (IVA)</label>
-          <select id="iva-porc" onchange="recalcular()" class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-green-500 focus:border-green-500">
-            <option value="0">Sin IVA (Remito)</option>
-            <option value="0.105">IVA 10.5%</option>
-            <option value="0.21">IVA 21%</option>
-          </select>
-        </div>
           <input id="dto-ger" type="number" value="0" min="0"
             class="w-full rounded-lg border-gray-200 text-sm" oninput="recalcular()" />
         </div>
@@ -315,7 +307,7 @@ const editar = sessionStorage.getItem('editar_cotizacion')
         <div class="grid grid-cols-2 gap-2 mb-3">
           <div>
             <label class="block text-xs text-purple-400 mb-1">% comisión</label>
-            <input id="comm-porc" type="number" value="25" min="0"
+            <input id="comm-porc" type="number" value="2" min="0"
               class="w-full rounded-lg border-purple-200 text-sm" oninput="recalcular()" />
           </div>
           <div>
@@ -1047,7 +1039,7 @@ window.editarPanel = (i) => {
       }, 100)
     }, 100)
   }
-// ── RECALCULAR ────────────────────────────────────────────────────
+  // ── RECALCULAR ────────────────────────────────────────────────────
   window.recalcular = function() {
     let costoTot = 0, ventaTot = 0, totalM2 = 0
     items.forEach(it => {
@@ -1056,23 +1048,13 @@ window.editarPanel = (i) => {
       ventaTot += ventaItem(it)
       if (it.tipo === 'panel') totalM2 += it.m2
     })
-    
     const descG   = parseFloat(document.getElementById('dto-ger').value) || 0
     const descMon = ventaTot * (descG / 100)
-    const subtotal = ventaTot - descMon // El valor neto de la venta
-    
-    // NUEVO: Leemos la cajita del IVA
-    const ivaSelector = document.getElementById('iva-porc')
-    const ivaPorc = ivaSelector ? parseFloat(ivaSelector.value) : 0
-    const ivaMon  = subtotal * ivaPorc
-    
-    const total   = subtotal + ivaMon // El valor final con impuestos (Viaja a finanzas)
-    
-    // La utilidad y comisión se calculan sobre el SUBTOTAL (sin IVA)
-    const util    = subtotal - costoTot
+    const total   = ventaTot - descMon
+    const util    = total - costoTot
     const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
     const commBase = document.getElementById('comm-base').value
-    const commUsd  = commBase === 'venta' ? subtotal * commPorc : util * commPorc
+    const commUsd  = commBase === 'venta' ? total * commPorc : util * commPorc
     const utilLibre = util - commUsd
     const tc = parseFloat(document.getElementById('campo-tc').value) || 1
 
@@ -1086,13 +1068,15 @@ window.editarPanel = (i) => {
     document.getElementById('v-comm-usd').textContent  = `U$S ${commUsd.toFixed(2)}`
     document.getElementById('v-comm-ars').textContent  = `$ ${Math.round(commUsd * tc).toLocaleString('es-AR')}`
 
-    //const sug = mkSugerido(totalM2)
-    //const sugEl = document.getElementById('mk-sug')
-    //if (sug !== null) {
-      //sugEl.textContent = `💡 Sug. ${totalM2.toFixed(1)}m²: ${sug.toFixed(1)}%`
-      //sugEl.classList.remove('hidden')
-    //} else { sugEl.classList.add('hidden') }
-  }// ── GUARDAR ───────────────────────────────────────────────────────
+    const sug = mkSugerido(totalM2)
+    const sugEl = document.getElementById('mk-sug')
+    if (sug !== null) {
+      sugEl.textContent = `💡 Sug. ${totalM2.toFixed(1)}m²: ${sug.toFixed(1)}%`
+      sugEl.classList.remove('hidden')
+    } else { sugEl.classList.add('hidden') }
+  }
+
+// ── GUARDAR ───────────────────────────────────────────────────────
   document.getElementById('btn-guardar').addEventListener('click', async () => {
     if (!clienteId) { alert('Seleccioná un cliente'); return }
     if (!items.length) { alert('Agregá al menos un ítem'); return }
