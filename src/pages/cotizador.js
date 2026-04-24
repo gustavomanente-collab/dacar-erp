@@ -307,7 +307,7 @@ const editar = sessionStorage.getItem('editar_cotizacion')
         <div class="grid grid-cols-2 gap-2 mb-3">
           <div>
             <label class="block text-xs text-purple-400 mb-1">% comisión</label>
-            <input id="comm-porc" type="number" value="2" min="0"
+            <input id="comm-porc" type="number" value="25" min="0"
               class="w-full rounded-lg border-purple-200 text-sm" oninput="recalcular()" />
           </div>
           <div>
