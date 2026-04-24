@@ -1086,12 +1086,12 @@ window.editarPanel = (i) => {
     document.getElementById('v-comm-usd').textContent  = `U$S ${commUsd.toFixed(2)}`
     document.getElementById('v-comm-ars').textContent  = `$ ${Math.round(commUsd * tc).toLocaleString('es-AR')}`
 
-    const sug = mkSugerido(totalM2)
-    const sugEl = document.getElementById('mk-sug')
-    if (sug !== null) {
-      sugEl.textContent = `💡 Sug. ${totalM2.toFixed(1)}m²: ${sug.toFixed(1)}%`
-      sugEl.classList.remove('hidden')
-    } else { sugEl.classList.add('hidden') }
+    //const sug = mkSugerido(totalM2)
+    //const sugEl = document.getElementById('mk-sug')
+    //if (sug !== null) {
+      //sugEl.textContent = `💡 Sug. ${totalM2.toFixed(1)}m²: ${sug.toFixed(1)}%`
+      //sugEl.classList.remove('hidden')
+    //} else { sugEl.classList.add('hidden') }
   }// ── GUARDAR ───────────────────────────────────────────────────────
   document.getElementById('btn-guardar').addEventListener('click', async () => {
     if (!clienteId) { alert('Seleccioná un cliente'); return }
