@@ -5,7 +5,6 @@ export function renderNavbar(perfil) {
       <div class="flex items-center justify-between">
         <span class="font-bold text-gray-900 text-lg">DACAR SRL</span>
 
-        <!-- Menú desktop -->
         <div class="hidden md:flex items-center gap-6">
           <button onclick="navigate('clientes')"
             class="text-sm text-gray-600 hover:text-green-700 font-medium">Clientes</button>
@@ -13,6 +12,8 @@ export function renderNavbar(perfil) {
             class="text-sm text-gray-600 hover:text-green-700 font-medium">Cotizador</button>
           <button onclick="navigate('historial')"
             class="text-sm text-gray-600 hover:text-green-700 font-medium">Historial</button>
+          <button onclick="navigate('finanzas')"
+            class="text-sm text-gray-600 hover:text-green-700 font-medium">Finanzas</button>
         </div>
 
         <div class="hidden md:flex items-center gap-3">
@@ -21,7 +22,6 @@ export function renderNavbar(perfil) {
           <button id="btn-logout" class="text-sm text-red-500 hover:underline">Salir</button>
         </div>
 
-        <!-- Botón hamburguesa mobile -->
         <button id="btn-menu-mobile" class="md:hidden p-2 rounded-lg hover:bg-gray-100">
           <div class="w-5 h-0.5 bg-gray-600 mb-1"></div>
           <div class="w-5 h-0.5 bg-gray-600 mb-1"></div>
@@ -29,7 +29,6 @@ export function renderNavbar(perfil) {
         </button>
       </div>
 
-      <!-- Menú mobile desplegable -->
       <div id="menu-mobile" class="hidden md:hidden mt-3 pb-2 border-t border-gray-100 pt-3 space-y-1">
         <div class="flex items-center justify-between mb-3">
           <span class="text-sm text-gray-500">${perfil.full_name}</span>
@@ -44,15 +43,13 @@ export function renderNavbar(perfil) {
           📋 Cotizador
         </button>
         <button onclick="navigate('historial'); toggleMenu()"
+          class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
+          📁 Historial
+        </button>
         <button onclick="navigate('finanzas'); toggleMenu()"
           class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
           💰 Finanzas
         </button>
-          class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
-          📁 Historial
-        </button>
-        <button onclick="navigate('finanzas')"
-          class="text-sm text-gray-600 hover:text-green-700 font-medium">Finanzas</button>
         <button id="btn-logout-mobile"
           class="w-full text-left px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 rounded-lg font-medium">
           🚪 Cerrar sesión
