@@ -20,6 +20,9 @@ export async function renderFinanzas(contenedor, perfil) {
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           🤝 Comisiones
         </button>
+        <button onclick="window.abrirSimuladorFlujo()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg ml-4">
+  📊 Abrir Simulador de Caja
+</button>
       </div>
       <div id="fin-content"></div>
     </div>
