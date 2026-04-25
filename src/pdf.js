@@ -5,23 +5,13 @@ export async function generarPDF(cot) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
 
-  // Datos de empresa
-  const empresa = cot.empresa || {}
-  const logoUrl = empresa.logo_url || 'https://i.ibb.co/gZ6vn8C3/encabezado-png.png'
-  const pieTexto = [
-    empresa.direccion || 'Teófilo Madrejón 6346 - Colastine Norte, Santa Fe',
-    empresa.telefono  || '3425 311209 / 3425 907044',
-    empresa.email     || 'estructurasdacar@gmail.com',
-    empresa.web       || 'www.estructurasdacar.com'
-  ].filter(Boolean).join('  |  ')
-
   // Encabezado
   try {
-    const img = await cargarImagen(logoUrl)
+const img = await cargarImagen('https://i.ibb.co/gZ6vn8C3/encabezado-png.png')
     doc.addImage(img, 'PNG', 10, 8, pw - 20, (pw - 20) * 0.18)
-  } catch (e) {
-    doc.setFontSize(16).setFont('helvetica', 'bold')
-    doc.text(empresa.nombre || 'DACAR ESTRUCTURAS', pw / 2, 20, { align: 'center' })
+} catch (e) {
+        doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text('DACAR ESTRUCTURAS', pw / 2, 20, { align: 'center' })
   }
 
   doc.setDrawColor(230, 180, 0).setLineWidth(0.8)
@@ -46,6 +36,7 @@ export async function generarPDF(cot) {
   // Tabla items
   const filas = (cot.itemsCalculados || []).map(it => {
     const esPanel = it.tipo === 'panel'
+    const esAcc   = it.tipo === 'accesorio' || it.tipo === 'flete'
     const desc    = (it.opcional ? '(OPCIONAL) ' : '') + it.descripcion
     const cant    = esPanel ? (it.chapas ? it.chapas : '-') : it.cant
     const largo   = esPanel && it.chapas ? it.largo : '-'
@@ -114,10 +105,12 @@ export async function generarPDF(cot) {
   doc.setDrawColor(230, 180, 0).setLineWidth(0.4)
   doc.line(10, pieY - 6, pw - 10, pieY - 6)
   doc.setFontSize(7).setTextColor(120)
-  doc.text(pieTexto, pw / 2, pieY, { align: 'center' })
+  doc.text(
+    'Teófilo Madrejón 6346 - Colastine Norte, Santa Fe  |  3425 311209 / 3425 907044  |  estructurasdacar@gmail.com  |  www.estructurasdacar.com',
+    pw / 2, pieY, { align: 'center' }
+  )
 
-  const nombreEmpresa = empresa.nombre || 'DACAR'
-  doc.save(`Presupuesto_${nombreEmpresa}_2026-${String(cot.numero).padStart(3,'0')}.pdf`)
+  doc.save(`Presupuesto_DACAR_2026-${String(cot.numero).padStart(3,'0')}.pdf`)
 }
 
 function cargarImagen(url) {

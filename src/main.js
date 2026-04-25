@@ -100,7 +100,7 @@ if (pagina === 'clientes') {
 } else if (pagina === 'historial') {
     renderHistorial(contenido)
   } else if (pagina === 'finanzas') {
-    renderFinanzas(contenido)
+    renderFinanzas(contenido, perfilGlobal)
     }}
 
 const { data: { session } } = await supabase.auth.getSession()

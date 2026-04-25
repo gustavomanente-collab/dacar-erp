@@ -38,174 +38,263 @@ export async function renderFinanzas(contenedor, perfil) {
     if (tab === 'comisiones')  renderComisiones()
   }
 
-  // ── PENDIENTES DE COBRO ────────────────────────────────────────
   async function renderPendientes() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
 
     const { data: cots } = await supabase
       .from('cotizaciones')
-      .select(`*, clientes(nombre, obra, telefono)`)
+      .select(`*, clientes(id, nombre, obra, telefono, codigo)`)
       .eq('estado', 'aprobada')
       .order('numero', { ascending: false })
 
     if (!cots?.length) {
-      el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay cotizaciones aprobadas pendientes de cobro.</p>'
+      el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay ventas aprobadas.</p>'
       return
     }
 
+    const { data: cobros } = await supabase
+      .from('cobros').select('cotizacion_id, monto_usd')
+
+    const cobradoPorCot = {}
+    ;(cobros || []).forEach(c => {
+      cobradoPorCot[c.cotizacion_id] = (cobradoPorCot[c.cotizacion_id] || 0) + (c.monto_usd || 0)
+    })
+
     el.innerHTML = `
-      <div class="space-y-3">
+      <div class="mb-4">
+        <input id="busca-venta" type="text" placeholder="🔍 Buscar por cliente, código o N° ppto..."
+          class="w-full rounded-lg border-gray-300 text-sm" />
+      </div>
+      <div id="tablero-ventas" class="space-y-2">
         ${cots.map(cot => {
           const nro = `2026-${String(cot.numero).padStart(3,'0')}`
-          const bruto = cot.total_bruto_usd || cot.total_final
-          const ivaLabel = cot.facturado ? `IVA ${cot.iva_pct}%` : 'Sin factura'
+          const cobrado = cobradoPorCot[cot.id] || 0
+          const bruto = cot.total_bruto_usd || cot.total_final || 0
+          const saldo = bruto - cobrado
+          const pct = bruto > 0 ? Math.min(100, cobrado / bruto * 100) : 0
+          const color = saldo <= 0 ? 'bg-green-500' : cobrado > 0 ? 'bg-yellow-400' : 'bg-gray-300'
+          const estado = saldo <= 0 ? '✅ Cobrado' : cobrado > 0 ? '⏳ Parcial' : '🔴 Pendiente'
           return `
-            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-              <div class="flex items-center justify-between mb-3">
-                <div>
-                  <p class="font-bold text-gray-900">${nro} — ${cot.clientes?.nombre || ''}</p>
-                  <p class="text-xs text-gray-500">${cot.clientes?.obra || ''}</p>
+            <div class="venta-card bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:border-green-300 transition-colors"
+              onclick="abrirFichaVenta('${cot.id}')"
+              data-search="${(cot.clientes?.nombre||'').toLowerCase()} ${(cot.clientes?.codigo||'').toLowerCase()} ${nro.toLowerCase()}">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div>
+                    <p class="font-bold text-gray-900 text-sm">${nro}</p>
+                    <p class="text-xs text-gray-400">${cot.clientes?.codigo || ''}</p>
+                  </div>
+                  <div>
+                    <p class="font-medium text-gray-800">${cot.clientes?.nombre || ''}</p>
+                    <p class="text-xs text-gray-500">${cot.clientes?.obra || ''}</p>
+                  </div>
                 </div>
                 <div class="text-right">
-                  <p class="text-xs text-gray-400">Total neto</p>
-                  <p class="font-bold text-green-700">U$S ${(cot.total_final || 0).toFixed(2)}</p>
-                  ${cot.total_bruto_usd ? `<p class="text-xs text-gray-500">Bruto: U$S ${cot.total_bruto_usd.toFixed(2)}</p>` : ''}
+                  <p class="text-xs text-gray-400">${estado}</p>
+                  <p class="font-bold text-green-700 text-sm">U$S ${bruto.toFixed(2)}</p>
+                  <p class="text-xs ${saldo > 0 ? 'text-red-500' : 'text-green-600'}">
+                    ${saldo > 0 ? `Saldo: U$S ${saldo.toFixed(2)}` : 'Cancelado'}
+                  </p>
                 </div>
               </div>
-
-              <!-- Facturación -->
-              <div class="bg-gray-50 rounded-lg p-3 mb-3">
-                <p class="text-xs font-semibold text-gray-600 mb-2">Configuración de cobro</p>
-                <div class="grid grid-cols-3 gap-2">
-                  <div>
-                    <label class="block text-xs text-gray-500 mb-1">¿Facturado?</label>
-                    <select id="fact-${cot.id}" class="w-full rounded border-gray-300 text-xs"
-                      onchange="toggleIva('${cot.id}')">
-                      <option value="0" ${!cot.facturado ? 'selected' : ''}>Sin factura</option>
-                      <option value="10.5" ${cot.facturado && cot.iva_pct == 10.5 ? 'selected' : ''}>IVA 10.5%</option>
-                      <option value="21" ${cot.facturado && cot.iva_pct == 21 ? 'selected' : ''}>IVA 21%</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-gray-500 mb-1">T/C $ x U$S</label>
-                    <input id="tc-${cot.id}" type="number" value="${cot.tc_cobro || 1150}"
-                      class="w-full rounded border-gray-300 text-xs"
-                      oninput="calcBruto('${cot.id}', ${cot.total_final})" />
-                  </div>
-                  <div class="bg-white rounded border border-gray-200 px-2 py-1">
-                    <p class="text-xs text-gray-400">Total bruto a cobrar</p>
-                    <p id="bruto-${cot.id}" class="text-sm font-bold text-gray-900">
-                      U$S ${bruto.toFixed(2)}
-                    </p>
-                    <p id="bruto-ars-${cot.id}" class="text-xs text-gray-500">
-                      $ ${Math.round(bruto * (cot.tc_cobro || 1150)).toLocaleString('es-AR')}
-                    </p>
-                  </div>
-                </div>
-                <button onclick="guardarConfigCobro('${cot.id}', ${cot.total_final})"
-                  class="mt-2 bg-gray-700 hover:bg-gray-900 text-white text-xs px-3 py-1 rounded">
-                  Guardar configuración
-                </button>
+              <div class="mt-2 bg-gray-100 rounded-full h-1.5">
+                <div class="${color} h-1.5 rounded-full" style="width:${pct}%"></div>
               </div>
-
-              <!-- Registrar cobro -->
-              <div class="grid grid-cols-4 gap-2">
-                <div>
-                  <label class="block text-xs text-gray-500 mb-1">Fecha</label>
-                  <input id="fecha-${cot.id}" type="date" value="${new Date().toISOString().split('T')[0]}"
-                    class="w-full rounded border-gray-300 text-xs" />
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
-                  <input id="monto-${cot.id}" type="number" min="0" step="0.01" placeholder="0.00"
-                    class="w-full rounded border-gray-300 text-xs" />
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-500 mb-1">Forma de pago</label>
-                  <select id="forma-${cot.id}" class="w-full rounded border-gray-300 text-xs">
-                    <option value="transferencia">Transferencia</option>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="cheque">Cheque</option>
-                    <option value="otro">Otro</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs text-gray-500 mb-1">Concepto</label>
-                  <input id="concepto-${cot.id}" type="text" placeholder="Anticipo, saldo..."
-                    class="w-full rounded border-gray-300 text-xs" />
-                </div>
-              </div>
-              <button onclick="registrarCobro('${cot.id}', '${cot.clientes?.nombre || ''}')"
-                class="mt-2 w-full bg-green-700 hover:bg-green-900 text-white text-xs font-medium py-2 rounded-lg">
-                💰 Registrar cobro
-              </button>
-              <p id="msg-${cot.id}" class="hidden text-xs text-green-700 mt-1 text-center"></p>
             </div>
           `
         }).join('')}
       </div>
     `
 
-    window.toggleIva = (id) => {
-      const cot = cots.find(c => c.id === id)
-      if (cot) calcBruto(id, cot.total_final)
-    }
-
-    window.calcBruto = (id, totalNeto) => {
-      const ivaPct = parseFloat(document.getElementById(`fact-${id}`).value) || 0
-      const tc = parseFloat(document.getElementById(`tc-${id}`).value) || 1150
-      const bruto = totalNeto * (1 + ivaPct / 100)
-      document.getElementById(`bruto-${id}`).textContent = `U$S ${bruto.toFixed(2)}`
-      document.getElementById(`bruto-ars-${id}`).textContent = `$ ${Math.round(bruto * tc).toLocaleString('es-AR')}`
-    }
-
-    window.guardarConfigCobro = async (id, totalNeto) => {
-      const ivaPct = parseFloat(document.getElementById(`fact-${id}`).value) || 0
-      const tc = parseFloat(document.getElementById(`tc-${id}`).value) || 1150
-      const bruto = totalNeto * (1 + ivaPct / 100)
-
-      await supabase.from('cotizaciones').update({
-        facturado: ivaPct > 0,
-        iva_pct: ivaPct,
-        total_bruto_usd: bruto,
-        tc_cobro: tc
-      }).eq('id', id)
-
-      document.getElementById(`bruto-${id}`).textContent = `U$S ${bruto.toFixed(2)}`
-      document.getElementById(`bruto-ars-${id}`).textContent = `$ ${Math.round(bruto * tc).toLocaleString('es-AR')}`
-      alert('✅ Configuración guardada')
-    }
-
-    window.registrarCobro = async (cotId, clienteNombre) => {
-      const monto = parseFloat(document.getElementById(`monto-${cotId}`).value) || 0
-      if (!monto) { alert('Ingresá el monto'); return }
-
-      const cot = cots.find(c => c.id === cotId)
-      const tc = parseFloat(document.getElementById(`tc-${cotId}`).value) || 1150
-
-      const { error } = await supabase.from('cobros').insert({
-        cotizacion_id: cotId,
-        cliente_id: cot.cliente_id,
-        fecha: document.getElementById(`fecha-${cotId}`).value,
-        monto_usd: monto,
-        monto_ars: monto * tc,
-        tc,
-        tipo_pago: document.getElementById(`forma-${cotId}`).value,
-        concepto: document.getElementById(`concepto-${cotId}`).value || 'Cobro',
+    document.getElementById('busca-venta').addEventListener('input', e => {
+      const txt = e.target.value.toLowerCase()
+      document.querySelectorAll('.venta-card').forEach(card => {
+        card.style.display = card.dataset.search.includes(txt) ? '' : 'none'
       })
+    })
 
-      if (error) { alert('Error: ' + error.message); return }
+    window.abrirFichaVenta = async (cotId) => {
+      const cot = cots.find(c => c.id === cotId)
+      if (!cot) return
 
-      const msgEl = document.getElementById(`msg-${cotId}`)
-      msgEl.textContent = `✅ Cobro de U$S ${monto} ($ ${Math.round(monto * tc).toLocaleString('es-AR')}) registrado`
-      msgEl.classList.remove('hidden')
-      document.getElementById(`monto-${cotId}`).value = ''
-      document.getElementById(`concepto-${cotId}`).value = ''
+      const { data: cobrosVenta } = await supabase
+        .from('cobros').select('*').eq('cotizacion_id', cotId).order('fecha')
+
+      const nro = `2026-${String(cot.numero).padStart(3,'0')}`
+      const bruto = cot.total_bruto_usd || cot.total_final || 0
+      const totalCobrado = (cobrosVenta || []).reduce((s, c) => s + (c.monto_usd || 0), 0)
+      const saldo = bruto - totalCobrado
+
+      const modal = document.createElement('div')
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
+      modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:650px;max-height:90vh;overflow-y:auto;">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <p class="text-xs text-gray-400">Venta confirmada</p>
+              <h3 class="text-xl font-black text-gray-900">${nro}</h3>
+              <p class="text-sm font-semibold text-gray-700">${cot.clientes?.nombre || ''} <span class="text-gray-400 text-xs">${cot.clientes?.codigo || ''}</span></p>
+              <p class="text-xs text-gray-500">${cot.clientes?.obra || ''} ${cot.clientes?.telefono ? '· Tel: ' + cot.clientes.telefono : ''}</p>
+            </div>
+            <button onclick="this.closest('[style]').remove()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-green-600">Total a cobrar</p>
+              <p class="font-black text-green-700">U$S ${bruto.toFixed(2)}</p>
+              ${cot.facturado ? `<p class="text-xs text-gray-400">IVA ${cot.iva_pct}% incl.</p>` : '<p class="text-xs text-gray-400">Sin factura</p>'}
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-blue-600">Cobrado</p>
+              <p class="font-black text-blue-700">U$S ${totalCobrado.toFixed(2)}</p>
+            </div>
+            <div class="bg-${saldo > 0 ? 'red' : 'gray'}-50 border border-${saldo > 0 ? 'red' : 'gray'}-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-${saldo > 0 ? 'red' : 'gray'}-600">Saldo</p>
+              <p class="font-black text-${saldo > 0 ? 'red' : 'gray'}-700">U$S ${saldo.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div class="bg-gray-100 rounded-full h-3 mb-4">
+            <div class="${saldo <= 0 ? 'bg-green-500' : 'bg-yellow-400'} h-3 rounded-full"
+              style="width:${Math.min(100, bruto > 0 ? totalCobrado/bruto*100 : 0)}%"></div>
+          </div>
+
+          <div class="mb-4">
+            <h4 class="font-semibold text-gray-700 text-sm mb-2">Cobros registrados</h4>
+            ${cobrosVenta?.length ? `
+              <table class="w-full text-xs">
+                <thead><tr class="bg-gray-100">
+                  <th class="px-2 py-1 text-left">Fecha</th>
+                  <th class="px-2 py-1 text-left">Concepto</th>
+                  <th class="px-2 py-1 text-left">Forma</th>
+                  <th class="px-2 py-1 text-right">U$S</th>
+                  <th class="px-2 py-1 text-right">$</th>
+                  <th class="px-2 py-1"></th>
+                </tr></thead>
+                <tbody>
+                  ${cobrosVenta.map((c, i) => `
+                    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                      <td class="px-2 py-1">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                      <td class="px-2 py-1">${c.concepto || ''}</td>
+                      <td class="px-2 py-1">${c.tipo_pago}</td>
+                      <td class="px-2 py-1 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                      <td class="px-2 py-1 text-right text-blue-600">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
+                      <td class="px-2 py-1 text-center">
+                        <button onclick="borrarCobroFicha('${c.id}', '${cotId}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<p class="text-gray-400 text-xs">Sin cobros aún.</p>'}
+          </div>
+
+          <div class="bg-gray-50 rounded-lg p-3 mb-4">
+            <p class="text-xs font-semibold text-gray-600 mb-2">Configuración de cobro</p>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Facturación</label>
+                <select id="ficha-fact" class="w-full rounded border-gray-300 text-xs">
+                  <option value="0" ${!cot.facturado ? 'selected' : ''}>Sin factura</option>
+                  <option value="10.5" ${cot.facturado && cot.iva_pct == 10.5 ? 'selected' : ''}>IVA 10.5%</option>
+                  <option value="21" ${cot.facturado && cot.iva_pct == 21 ? 'selected' : ''}>IVA 21%</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">T/C</label>
+                <input id="ficha-tc" type="number" value="${cot.tc_cobro || 1150}" class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div class="flex items-end">
+                <button onclick="guardarConfigFicha('${cot.id}', ${cot.total_final})"
+                  class="w-full bg-gray-700 text-white text-xs py-1.5 rounded">Guardar</button>
+              </div>
+            </div>
+          </div>
+
+          ${saldo > 0 ? `
+          <div class="border-t pt-4">
+            <h4 class="font-semibold text-gray-700 text-sm mb-2">Registrar cobro</h4>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Fecha</label>
+                <input id="ficha-fecha" type="date" value="${new Date().toISOString().split('T')[0]}"
+                  class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
+                <input id="ficha-monto" type="number" min="0" step="0.01" placeholder="${saldo.toFixed(2)}"
+                  class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Forma de pago</label>
+                <select id="ficha-forma" class="w-full rounded border-gray-300 text-xs">
+                  <option value="transferencia">Transferencia</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Concepto</label>
+                <input id="ficha-concepto" type="text" placeholder="Anticipo, saldo..."
+                  class="w-full rounded border-gray-300 text-xs" />
+              </div>
+            </div>
+            <button onclick="cobrarFicha('${cot.id}', '${cot.cliente_id}')"
+              class="w-full bg-green-700 hover:bg-green-900 text-white text-sm font-medium py-2 rounded-lg">
+              💰 Registrar cobro
+            </button>
+            <p id="ficha-msg" class="hidden text-xs text-green-700 mt-1 text-center"></p>
+          </div>
+          ` : '<div class="bg-green-50 rounded-lg p-3 text-center text-sm font-semibold text-green-700">✅ Venta completamente cobrada</div>'}
+        </div>
+      `
+      document.body.appendChild(modal)
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
+
+      window.guardarConfigFicha = async (id, totalNeto) => {
+        const ivaPct = parseFloat(document.getElementById('ficha-fact').value) || 0
+        const tc = parseFloat(document.getElementById('ficha-tc').value) || 1150
+        const bruto = totalNeto * (1 + ivaPct / 100)
+        await supabase.from('cotizaciones').update({
+          facturado: ivaPct > 0, iva_pct: ivaPct, total_bruto_usd: bruto, tc_cobro: tc
+        }).eq('id', id)
+        modal.remove()
+        renderPendientes()
+      }
+
+      window.cobrarFicha = async (cotId, clienteId) => {
+        const monto = parseFloat(document.getElementById('ficha-monto').value) || 0
+        const tc = parseFloat(document.getElementById('ficha-tc')?.value) || cot.tc_cobro || 1150
+        if (!monto) { alert('Ingresá el monto'); return }
+        const { error } = await supabase.from('cobros').insert({
+          cotizacion_id: cotId,
+          cliente_id: clienteId,
+          fecha: document.getElementById('ficha-fecha').value,
+          monto_usd: monto,
+          monto_ars: monto * tc,
+          tc,
+          tipo_pago: document.getElementById('ficha-forma').value,
+          concepto: document.getElementById('ficha-concepto').value || 'Cobro',
+        })
+        if (error) { alert('Error: ' + error.message); return }
+        modal.remove()
+        renderPendientes()
+      }
+
+      window.borrarCobroFicha = async (id, cotId) => {
+        const clave = prompt('Clave de gerencia:')
+        if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
+        if (!confirm('¿Confirmás?')) return
+        await supabase.from('cobros').delete().eq('id', id)
+        modal.remove()
+        abrirFichaVenta(cotId)
+      }
     }
   }
 
-  // ── COBROS REGISTRADOS ─────────────────────────────────────────
   async function renderCobros() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
@@ -236,19 +325,17 @@ export async function renderFinanzas(contenedor, perfil) {
       </div>
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <table class="w-full text-xs">
-          <thead>
-            <tr class="bg-gray-900 text-white">
-              <th class="px-3 py-2 text-left">Fecha</th>
-              <th class="px-3 py-2 text-left">Cliente</th>
-              <th class="px-3 py-2 text-left">Ppto</th>
-              <th class="px-3 py-2 text-left">Concepto</th>
-              <th class="px-3 py-2 text-left">Forma</th>
-              <th class="px-3 py-2 text-right">U$S</th>
-              <th class="px-3 py-2 text-right">$</th>
-              <th class="px-3 py-2 text-center">T/C</th>
-              <th class="px-3 py-2"></th>
-            </tr>
-          </thead>
+          <thead><tr class="bg-gray-900 text-white">
+            <th class="px-3 py-2 text-left">Fecha</th>
+            <th class="px-3 py-2 text-left">Cliente</th>
+            <th class="px-3 py-2 text-left">Ppto</th>
+            <th class="px-3 py-2 text-left">Concepto</th>
+            <th class="px-3 py-2 text-left">Forma</th>
+            <th class="px-3 py-2 text-right">U$S</th>
+            <th class="px-3 py-2 text-right">$</th>
+            <th class="px-3 py-2 text-center">T/C</th>
+            <th class="px-3 py-2"></th>
+          </tr></thead>
           <tbody>
             ${data.map((c, i) => `
               <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
@@ -257,12 +344,11 @@ export async function renderFinanzas(contenedor, perfil) {
                 <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
                 <td class="px-3 py-2">${c.concepto || ''}</td>
                 <td class="px-3 py-2">${c.tipo_pago}</td>
-                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd || 0).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-blue-700">$ ${Math.round(c.monto_ars || 0).toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-blue-700">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                 <td class="px-3 py-2 text-center text-gray-500">${c.tc || '-'}</td>
                 <td class="px-3 py-2 text-center">
-                  <button onclick="borrarCobro('${c.id}')"
-                    class="text-red-400 hover:text-red-600 font-bold">✕</button>
+                  <button onclick="borrarCobro('${c.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
                 </td>
               </tr>
             `).join('')}
@@ -272,15 +358,14 @@ export async function renderFinanzas(contenedor, perfil) {
     `
 
     window.borrarCobro = async (id) => {
-      const clave = prompt('Ingresá la clave de gerencia para borrar:')
+      const clave = prompt('Clave de gerencia:')
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
-      if (!confirm('¿Confirmás que querés borrar este cobro?')) return
+      if (!confirm('¿Confirmás?')) return
       await supabase.from('cobros').delete().eq('id', id)
       renderCobros()
     }
   }
 
-  // ── PAGOS PROVEEDOR ────────────────────────────────────────────
   async function renderProveedor() {
     const el = document.getElementById('fin-content')
     el.innerHTML = `
@@ -328,7 +413,6 @@ export async function renderFinanzas(contenedor, perfil) {
         </button>
         <p id="msg-prov" class="hidden text-sm mt-2 text-green-700"></p>
       </div>
-
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div id="lista-prov"><p class="text-gray-400 text-sm p-4">Cargando...</p></div>
       </div>
@@ -338,7 +422,6 @@ export async function renderFinanzas(contenedor, perfil) {
       const monto = parseFloat(document.getElementById('prov-monto').value) || 0
       const tc = parseFloat(document.getElementById('prov-tc').value) || 1150
       if (!monto) { alert('Ingresá el monto'); return }
-
       const { error } = await supabase.from('pagos_proveedor').insert({
         fecha: document.getElementById('prov-fecha').value,
         monto_usd: monto,
@@ -346,11 +429,9 @@ export async function renderFinanzas(contenedor, perfil) {
         nro_factura: document.getElementById('prov-factura').value,
         concepto: document.getElementById('prov-concepto').value,
       })
-
       if (error) { alert('Error: ' + error.message); return }
-
       const msgEl = document.getElementById('msg-prov')
-      msgEl.textContent = `✅ Pago de U$S ${monto} ($ ${Math.round(monto * tc).toLocaleString('es-AR')}) registrado`
+      msgEl.textContent = `✅ Pago de U$S ${monto} ($ ${Math.round(monto*tc).toLocaleString('es-AR')}) registrado`
       msgEl.classList.remove('hidden')
       document.getElementById('prov-monto').value = ''
       document.getElementById('prov-factura').value = ''
@@ -364,10 +445,8 @@ export async function renderFinanzas(contenedor, perfil) {
   async function cargarProv() {
     const { data } = await supabase
       .from('pagos_proveedor').select('*').order('fecha', { ascending: false }).limit(50)
-
     const el = document.getElementById('lista-prov')
     if (!data?.length) { el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay pagos.</p>'; return }
-
     const total = data.reduce((s, p) => s + (p.monto_usd || 0), 0)
     el.innerHTML = `
       <div class="p-3 bg-gray-50 border-b flex justify-between">
@@ -390,7 +469,7 @@ export async function renderFinanzas(contenedor, perfil) {
               <td class="px-3 py-2">${p.concepto || ''}</td>
               <td class="px-3 py-2">${p.nro_factura || '-'}</td>
               <td class="px-3 py-2">${p.tipo_pago}</td>
-              <td class="px-3 py-2 text-right font-bold">U$S ${(p.monto_usd || 0).toFixed(2)}</td>
+              <td class="px-3 py-2 text-right font-bold">U$S ${(p.monto_usd||0).toFixed(2)}</td>
               <td class="px-3 py-2 text-center">
                 <button onclick="borrarProv('${p.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
               </td>
@@ -399,7 +478,6 @@ export async function renderFinanzas(contenedor, perfil) {
         </tbody>
       </table>
     `
-
     window.borrarProv = async (id) => {
       const clave = prompt('Clave de gerencia:')
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
@@ -409,7 +487,6 @@ export async function renderFinanzas(contenedor, perfil) {
     }
   }
 
-  // ── COMISIONES ─────────────────────────────────────────────────
   async function renderComisiones() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
@@ -443,9 +520,9 @@ export async function renderFinanzas(contenedor, perfil) {
                 <td class="px-3 py-2">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
                 <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
                 <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
-                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd || 0).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(c.monto_usd * 0.20).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.monto_usd * 0.20 * (c.tc || 1150)).toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(c.monto_usd*0.20).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.monto_usd*0.20*(c.tc||1150)).toLocaleString('es-AR')}</td>
               </tr>
             `).join('')}
           </tbody>

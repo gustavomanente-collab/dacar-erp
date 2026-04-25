@@ -95,8 +95,7 @@ export async function renderClientes(contenedor) {
     contenedorLista.innerHTML = lista.map(c => `
       <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
         <div>
-          <p class="font-medium text-gray-900">${c.nombre}</p>
-          <p class="text-sm text-gray-500">${c.telefono || ''} ${c.obra ? '· Obra: ' + c.obra : ''}</p>
+<p class="font-medium text-gray-900">${c.nombre} <span class="text-xs text-gray-400 ml-1">${c.codigo || ''}</span></p>          <p class="text-sm text-gray-500">${c.telefono || ''} ${c.obra ? '· Obra: ' + c.obra : ''}</p>
           <p class="text-sm text-gray-400">${c.direccion || ''}</p>
         </div>
         <button onclick="editarCliente('${c.id}')"
