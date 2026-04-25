@@ -1079,168 +1079,167 @@ sugEl.classList.remove('hidden')
 
 // ── GUARDAR ───────────────────────────────────────────────────────
 document.getElementById('btn-guardar').addEventListener('click', async () => {
-if (!clienteId) { alert('Seleccioná un cliente'); return }
-if (!items.length) { alert('Agregá al menos un ítem'); return }
+  if (!clienteId) { alert('Seleccioná un cliente'); return }
+  if (!items.length) { alert('Agregá al menos un ítem'); return }
 
-let ventaTot = 0, costoTot = 0
-items.forEach(it => {
-if (it.opcional) return
-ventaTot += ventaItem(it)
-costoTot += it.tipo === 'panel' ? it.m2 * it.costo_unit : it.cant * it.costo_unit
-})
-const descG = parseFloat(document.getElementById('dto-ger').value) || 0
-const total = ventaTot * (1 - descG / 100)
+  let ventaTot = 0, costoTot = 0
+  items.forEach(it => {
+    if (it.opcional) return
+    ventaTot += ventaItem(it)
+    costoTot += it.tipo === 'panel' ? it.m2 * it.costo_unit : it.cant * it.costo_unit
+  })
+  const descG = parseFloat(document.getElementById('dto-ger').value) || 0
+  const total = ventaTot * (1 - descG / 100)
 
-const { data: cot, error } = await supabase.from('cotizaciones').insert({
-cliente_id: clienteId,
-margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
-descuento_pct: descG,
-flete: 0,
-total_neto: costoTot,
-total_final: total,
-estado: 'borrador'
-}).select().single()
+  const { data: cot, error } = await supabase.from('cotizaciones').insert({
+    cliente_id: clienteId,
+    margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
+    descuento_pct: descG,
+    flete: 0,
+    total_neto: costoTot,
+    total_final: total,
+    estado: 'borrador'
+  }).select().single()
 
-if (error) { alert('Error al guardar: ' + error.message); return }
+  if (error) { alert('Error al guardar: ' + error.message); return }
 
-await supabase.from('cotizacion_items').insert(
-items.map(it => ({
-cotizacion_id: cot.id,
-producto_id: null,
-descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
-cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
-precio_unitario: (() => {
-const q = it.tipo === 'panel' ? it.m2 : it.cant
-return q > 0 ? ventaItem(it) / q : 0
-})(),
-notas: JSON.stringify({
-tipo: it.tipo,
-modelo: it.modelo || null,
-espesor: it.espesor || null,
-term: it.term || null,
-color: it.color || null,
-m2: it.m2 || null,
-chapas: it.chapas || null,
-largo: it.largo || null,
-costo_unit: it.costo_unit,
-dto: it.dto || 0,
-})
-}))
-)
+  await supabase.from('cotizacion_items').insert(
+    items.map(it => ({
+      cotizacion_id: cot.id,
+      producto_id: null,
+      descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+      cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
+      precio_unitario: (() => {
+        const q = it.tipo === 'panel' ? it.m2 : it.cant
+        return q > 0 ? ventaItem(it) / q : 0
+      })(),
+      notas: JSON.stringify({
+        tipo: it.tipo,
+        modelo: it.modelo || null,
+        espesor: it.espesor || null,
+        term: it.term || null,
+        color: it.color || null,
+        m2: it.m2 || null,
+        chapas: it.chapas || null,
+        largo: it.largo || null,
+        costo_unit: it.costo_unit,
+        dto: it.dto || 0,
+      })
+    }))
+  )
 
-const itemsCalculados = items.map(it => ({
-descripcion: it.descripcion,
-opcional: it.opcional,
-tipo: it.tipo,
-m2: it.m2 || null,
-cant: it.cant || null,
-chapas: it.chapas || null,
-largo: it.largo || null,
-costo_unit: it.costo_unit,
-precio_unit: (() => {
-const q = it.tipo === 'panel' ? it.m2 : it.cant
-return q > 0 ? ventaItem(it) / q : 0
-})(),
-subtotal: ventaItem(it),
-}))
+  // Preparamos datos para el PDF
+  const itemsCalculados = items.map(it => ({
+    descripcion: it.descripcion,
+    opcional: it.opcional,
+    tipo: it.tipo,
+    m2: it.m2 || null,
+    cant: it.cant || null,
+    chapas: it.chapas || null,
+    largo: it.largo || null,
+    costo_unit: it.costo_unit,
+    precio_unit: (() => {
+      const q = it.tipo === 'panel' ? it.m2 : it.cant
+      return q > 0 ? ventaItem(it) / q : 0
+    })(),
+    subtotal: ventaItem(it),
+  }))
 
-cotizacionGuardada = {
-numero: cot.numero,
-fecha: document.getElementById('campo-fecha').value,
-cliente_nombre: clienteData.nombre,
-cliente_obra: clienteData.obra,
-cliente_dir: clienteData.dir,
-itemsCalculados,
-total_neto: costoTot,
-total_final: total,
-descuento_pct: descG,
-validez: parseInt(document.getElementById('cond-validez').value) || 5,
-condpago: document.getElementById('cond-pago').value,
-}
+  cotizacionGuardada = {
+    numero: cot.numero,
+    fecha: document.getElementById('campo-fecha').value,
+    cliente_nombre: clienteData.nombre,
+    cliente_obra: clienteData.obra,
+    cliente_dir: clienteData.dir,
+    itemsCalculados,
+    total_neto: costoTot,
+    total_final: total,
+    descuento_pct: descG,
+    validez: parseInt(document.getElementById('cond-validez').value) || 5,
+    condpago: document.getElementById('cond-pago').value,
+  }
 
-const btnPdf = document.getElementById('btn-pdf')
-btnPdf.disabled = false
-btnPdf.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
+  const btnPdf = document.getElementById('btn-pdf')
+  if (btnPdf) {
+    btnPdf.disabled = false
+    btnPdf.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
+  }
 
-// Enviar a Google Sheets
-try {
-const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
-const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
-const commBase = document.getElementById('comm-base').value
-const utilidad = total - costoTot
-const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
+  alert('¡Cotización ' + cot.numero + ' guardada con éxito!');
 
-const itemsSheets = items.map(it => {
-const venta = ventaItem(it)
-const cantidad = it.tipo === 'panel' ? it.m2 : it.cant
-const costoUnit = it.costo_unit || 0
-const costoTotal = costoUnit * cantidad
-return {
-descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
-tipo: it.tipo,
-cantidad,
-costo_unit: costoUnit,
-costo_total: parseFloat(costoTotal.toFixed(2)),
-precio_unit: parseFloat((cantidad > 0 ? venta / cantidad : 0).toFixed(2)),
-venta_total: parseFloat(venta.toFixed(2)),
-utilidad: parseFloat((venta - costoTotal).toFixed(2)),
-opcional: it.opcional
-}
-})
+  // Enviar a Google Sheets
+  try {
+    const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
+    const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
+    const commBase = document.getElementById('comm-base').value
+    const utilidad = total - costoTot
+    const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
 
-const empresa = typeof empresas !== 'undefined' ? empresas.find(e => e.id === document.getElementById('sel-empresa')?.value) : null;
+    const itemsSheets = items.map(it => {
+      const venta = ventaItem(it)
+      const cantidad = it.tipo === 'panel' ? it.m2 : it.cant
+      return {
+        descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+        tipo: it.tipo,
+        cantidad,
+        costo_unit: it.costo_unit || 0,
+        costo_total: parseFloat(((it.costo_unit || 0) * cantidad).toFixed(2)),
+        precio_unit: parseFloat((cantidad > 0 ? venta / cantidad : 0).toFixed(2)),
+        venta_total: parseFloat(venta.toFixed(2)),
+        utilidad: parseFloat((venta - ((it.costo_unit || 0) * cantidad)).toFixed(2)),
+        opcional: it.opcional
+      }
+    })
 
-// Enviar via formulario oculto (evita CORS)
-const form = document.createElement('form')
-form.method = 'POST'
-form.action = SHEETS_URL
-form.target = 'sheets-iframe'
-form.style.display = 'none'
+    const empresaSel = document.getElementById('sel-empresa')?.value;
+    const empresa = typeof empresas !== 'undefined' ? empresas.find(e => e.id === empresaSel) : null;
 
-const input = document.createElement('input')
-input.type = 'hidden'
-input.name = 'payload'
-input.value = JSON.stringify({
-tipo: 'cotizacion',
-numero: cot.numero,
-fecha: document.getElementById('campo-fecha').value,
-cliente_nombre: clienteData.nombre,
-cliente_obra: clienteData.obra || '',
-empresa_nombre: empresa?.nombre || 'DACAR SRL',
-vendedor: typeof perfilGlobal !== 'undefined' ? perfilGlobal?.full_name || '' : '',
-estado: 'borrador',
-costo_neto: parseFloat(costoTot.toFixed(2)),
-venta_bruta: parseFloat(ventaTot.toFixed(2)),
-total_final: parseFloat(total.toFixed(2)),
-utilidad: parseFloat(utilidad.toFixed(2)),
-margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
-descuento_pct: descG,
-comision_usd: parseFloat(commUsd.toFixed(2)),
-items: itemsSheets
-})
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = SHEETS_URL
+    form.target = 'sheets-iframe'
+    form.style.display = 'none'
 
-form.appendChild(input)
-document.body.appendChild(form)
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'payload'
+    input.value = JSON.stringify({
+      tipo: 'cotizacion',
+      numero: cot.numero,
+      fecha: document.getElementById('campo-fecha').value,
+      cliente_nombre: clienteData.nombre,
+      cliente_obra: clienteData.obra || '',
+      empresa_nombre: empresa?.nombre || 'DACAR SRL',
+      vendedor: typeof perfilGlobal !== 'undefined' ? perfilGlobal?.full_name || '' : '',
+      estado: 'borrador',
+      costo_neto: parseFloat(costoTot.toFixed(2)),
+      venta_bruta: parseFloat(ventaTot.toFixed(2)),
+      total_final: parseFloat(total.toFixed(2)),
+      utilidad: parseFloat(utilidad.toFixed(2)),
+      margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
+      descuento_pct: descG,
+      comision_usd: parseFloat(commUsd.toFixed(2)),
+      items: itemsSheets
+    })
 
-const iframe = document.createElement('iframe')
-iframe.name = 'sheets-iframe'
-iframe.style.display = 'none'
-document.body.appendChild(iframe)
+    form.appendChild(input)
+    document.body.appendChild(form)
 
-form.submit()
-setTimeout(() => {
-form.remove()
-iframe.remove()
-}, 3000)
+    const iframe = document.createElement('iframe')
+    iframe.name = 'sheets-iframe'
+    iframe.style.display = 'none'
+    document.body.appendChild(iframe)
 
-} catch (error) {
-console.error('Error al enviar a Sheets:', error)
-}
+    form.submit()
+    setTimeout(() => { form.remove(); iframe.remove(); }, 3000)
 
-}) // <-- Cierra el evento del botón guardar
+} catch (err) {
+      console.error('Error Sheets:', err)
+    }
+  }); // Este cierra el EventListener del botón guardar
 
-} // <-- Cierra la función principal renderCotizador()
+} // <--- ESTA ES LA LLAVE QUE FALTA (La que cierra la línea 99)
 
 function esc(s) { 
-return String(s || '').replace(/'/g, "\\'") 
+  return String(s || '').replace(/'/g, "\\'") 
 }
