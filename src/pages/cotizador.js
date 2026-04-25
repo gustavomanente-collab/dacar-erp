@@ -1166,7 +1166,12 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
   }
 
   alert('¡Cotización ' + cot.numero + ' guardada con éxito!');
-
+// Listener PDF
+  if (btnPdf) {
+    btnPdf.onclick = () => {
+      if (cotizacionGuardada) generarPDF(cotizacionGuardada)
+    }
+  }
   // Enviar a Google Sheets
   /*try {
     const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
