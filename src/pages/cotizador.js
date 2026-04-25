@@ -1173,75 +1173,70 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
     }
   }
   // Enviar a Google Sheets
-  /*try {
-    const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
-    const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
-    const commBase = document.getElementById('comm-base').value
-    const utilidad = total - costoTot
-    const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
+    try {
+      const tc = parseFloat(document.getElementById('campo-tc')?.value) || 1150
+      const commPorc = (parseFloat(document.getElementById('comm-porc')?.value) || 0) / 100
+      const commBase = document.getElementById('comm-base')?.value || 'utilidad'
+      const utilidad = total - costoTot
+      const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
+      const empresa = empresas?.find(e => e.id === document.getElementById('sel-empresa')?.value)
 
-    const itemsSheets = items.map(it => {
-      const venta = ventaItem(it)
-      const cantidad = it.tipo === 'panel' ? it.m2 : it.cant
-      return {
-        descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
-        tipo: it.tipo,
-        cantidad,
-        costo_unit: it.costo_unit || 0,
-        costo_total: parseFloat(((it.costo_unit || 0) * cantidad).toFixed(2)),
-        precio_unit: parseFloat((cantidad > 0 ? venta / cantidad : 0).toFixed(2)),
-        venta_total: parseFloat(venta.toFixed(2)),
-        utilidad: parseFloat((venta - ((it.costo_unit || 0) * cantidad)).toFixed(2)),
-        opcional: it.opcional
+      const itemsSheets = items.map(it => {
+        const venta = ventaItem(it)
+        const cantidad = it.tipo === 'panel' ? it.m2 : it.cant
+        const costoUnit = it.costo_unit || 0
+        return {
+          descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+          tipo: it.tipo,
+          cantidad,
+          costo_unit: costoUnit,
+          costo_total: parseFloat((costoUnit * cantidad).toFixed(2)),
+          precio_unit: parseFloat((cantidad > 0 ? venta / cantidad : 0).toFixed(2)),
+          venta_total: parseFloat(venta.toFixed(2)),
+          utilidad: parseFloat((venta - costoUnit * cantidad).toFixed(2)),
+          opcional: it.opcional || false
+        }
+      })
+
+      const payload = {
+        tipo: 'cotizacion',
+        numero: cot.numero,
+        fecha: document.getElementById('campo-fecha')?.value || new Date().toLocaleDateString('es-AR'),
+        cliente_nombre: clienteData.nombre,
+        cliente_obra: clienteData.obra || '',
+        empresa_nombre: empresa?.nombre || 'DACAR SRL',
+        vendedor: perfilGlobal?.full_name || '',
+        estado: 'borrador',
+        costo_neto: parseFloat(costoTot.toFixed(2)),
+        venta_bruta: parseFloat(ventaTot.toFixed(2)),
+        total_final: parseFloat(total.toFixed(2)),
+        utilidad: parseFloat(utilidad.toFixed(2)),
+        margen_pct: parseFloat(document.getElementById('mk-pan')?.value) || 30,
+        descuento_pct: descG,
+        comision_usd: parseFloat(commUsd.toFixed(2)),
+        items: itemsSheets
       }
-    })
 
-    const empresaSel = document.getElementById('sel-empresa')?.value;
-    const empresa = typeof empresas !== 'undefined' ? empresas.find(e => e.id === empresaSel) : null;
-
-    const form = document.createElement('form')
-    form.method = 'POST'
-    form.action = SHEETS_URL
-    form.target = 'sheets-iframe'
-    form.style.display = 'none'
-
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.name = 'payload'
-    input.value = JSON.stringify({
-      tipo: 'cotizacion',
-      numero: cot.numero,
-      fecha: document.getElementById('campo-fecha').value,
-      cliente_nombre: clienteData.nombre,
-      cliente_obra: clienteData.obra || '',
-      empresa_nombre: empresa?.nombre || 'DACAR SRL',
-      vendedor: typeof perfilGlobal !== 'undefined' ? perfilGlobal?.full_name || '' : '',
-      estado: 'borrador',
-      costo_neto: parseFloat(costoTot.toFixed(2)),
-      venta_bruta: parseFloat(ventaTot.toFixed(2)),
-      total_final: parseFloat(total.toFixed(2)),
-      utilidad: parseFloat(utilidad.toFixed(2)),
-      margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
-      descuento_pct: descG,
-      comision_usd: parseFloat(commUsd.toFixed(2)),
-      items: itemsSheets
-    })
-
-    form.appendChild(input)
-    document.body.appendChild(form)
-
-    const iframe = document.createElement('iframe')
-    iframe.name = 'sheets-iframe'
-    iframe.style.display = 'none'
-    document.body.appendChild(iframe)
-
-    form.submit()
-    setTimeout(() => { form.remove(); iframe.remove(); }, 3000)
-
-} catch (err) {
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = SHEETS_URL
+      form.target = 'sheets-frame'
+      form.style.display = 'none'
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = 'payload'
+      input.value = JSON.stringify(payload)
+      form.appendChild(input)
+      const iframe = document.createElement('iframe')
+      iframe.name = 'sheets-frame'
+      iframe.style.display = 'none'
+      document.body.appendChild(iframe)
+      document.body.appendChild(form)
+      form.submit()
+      setTimeout(() => { form.remove(); iframe.remove() }, 5000)
+    } catch (err) {
       console.error('Error Sheets:', err)
-    }*/
-  }); // Este cierra el EventListener del botón guardar
+    }  }); // Este cierra el EventListener del botón guardar
 
 } // <--- ESTA ES LA LLAVE QUE FALTA (La que cierra la línea 99)
 
