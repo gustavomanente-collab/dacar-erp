@@ -1168,7 +1168,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
   alert('¡Cotización ' + cot.numero + ' guardada con éxito!');
 
   // Enviar a Google Sheets
-  try {
+  /*try {
     const tc = parseFloat(document.getElementById('campo-tc').value) || 1150
     const commPorc = (parseFloat(document.getElementById('comm-porc').value) || 0) / 100
     const commBase = document.getElementById('comm-base').value
@@ -1235,7 +1235,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
 
 } catch (err) {
       console.error('Error Sheets:', err)
-    }
+    }*/
   }); // Este cierra el EventListener del botón guardar
 
 } // <--- ESTA ES LA LLAVE QUE FALTA (La que cierra la línea 99)
