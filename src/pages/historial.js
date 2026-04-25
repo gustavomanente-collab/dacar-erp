@@ -11,8 +11,11 @@ export async function renderHistorial(contenedor) {
   contenedor.innerHTML = `
     <div class="p-4 max-w-5xl mx-auto">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-bold text-gray-900">Historial de cotizaciones</h2>
-        <input id="busca-hist" type="text" placeholder="🔍 Buscar por cliente u obra..."
+<h2 class="text-xl font-bold text-gray-900">Historial de cotizaciones</h2>
+        <button id="btn-sync-sheets"
+          class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
+          📊 Sincronizar con Sheets
+        </button>        <input id="busca-hist" type="text" placeholder="🔍 Buscar por cliente u obra..."
           class="rounded-lg border-gray-300 shadow-sm text-sm w-64" />
       </div>
       <div class="flex gap-2 mb-4 flex-wrap">
@@ -32,7 +35,32 @@ export async function renderHistorial(contenedor) {
       </div>
     </div>
   `
+document.getElementById('btn-sync-sheets').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync-sheets')
+    btn.textContent = '⏳ Sincronizando...'
+    btn.disabled = true
 
+    try {
+      const { data: cots } = await supabase
+        .from('cotizaciones')
+        .select('numero')
+        .order('numero', { ascending: false })
+        .limit(1)
+
+      const ultimoNumero = cots?.[0]?.numero || 0
+
+      await fetch(`https://script.google.com/macros/s/AKfycby-It6dRCUuRL6KQMwF3uiIYqRDtXrN-eYkHX64L2m4WbiN0zGxwa3SzegPpUhyz1imyA/exec?action=sync&t=${Date.now()}`)
+
+      btn.textContent = '✅ Sincronizado'
+      setTimeout(() => {
+        btn.textContent = '📊 Sincronizar con Sheets'
+        btn.disabled = false
+      }, 3000)
+    } catch (e) {
+      btn.textContent = '❌ Error - Intentá de nuevo'
+      btn.disabled = false
+    }
+  })
   let todasLasCots = []
   let filtroEstado = ''
 
