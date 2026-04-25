@@ -535,8 +535,7 @@ export async function renderFinanzas(contenedor, perfil) {
   }
 
   renderPendientes()
-  window.abrirSimuladorFlujo = () => {
-  // 1. Estado inicial por defecto
+window.abrirSimuladorFlujo = () => {
   let ventaTotal = 10000;
   let costoTotal = 7500;
   let cobros = [
@@ -548,158 +547,184 @@ export async function renderFinanzas(contenedor, perfil) {
     { id: 1, dias: 15, pct: 100 }
   ];
 
-  // 2. Crear el contenedor del Modal
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;';
   
   modal.innerHTML = `
-    <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+    <div class="bg-white rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden shadow-2xl">
       <div class="bg-gray-900 p-4 flex justify-between items-center text-white">
         <h2 class="text-lg font-bold">📊 Simulador Dinámico de Flujo de Caja</h2>
         <button id="btn-cerrar-sim" class="text-gray-400 hover:text-white text-2xl font-bold">×</button>
       </div>
 
-      <div class="p-6 overflow-y-auto flex-1 bg-gray-50">
+      <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex gap-6">
         
-        <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="w-1/3 flex flex-col gap-4">
           <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
             <label class="block text-xs font-bold text-gray-500 mb-1">Venta Total (U$S)</label>
-            <input type="number" id="sim-venta" value="${ventaTotal}" class="w-full border-gray-300 rounded-lg text-lg font-bold text-green-700" />
+            <input type="number" id="sim-venta" value="${ventaTotal}" class="w-full border-gray-300 rounded-lg font-bold text-green-700" />
+            <label class="block text-xs font-bold text-gray-500 mt-2 mb-1">Costo Materiales (U$S)</label>
+            <input type="number" id="sim-costo" value="${costoTotal}" class="w-full border-gray-300 rounded-lg font-bold text-red-700" />
           </div>
+
           <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <label class="block text-xs font-bold text-gray-500 mb-1">Costo Materiales (U$S)</label>
-            <input type="number" id="sim-costo" value="${costoTotal}" class="w-full border-gray-300 rounded-lg text-lg font-bold text-red-700" />
+            <div class="flex justify-between items-end mb-2">
+              <h3 class="text-sm font-bold text-gray-700">🟢 Cobros</h3>
+              <button id="btn-add-cobro" class="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200">+ Agregar</button>
+            </div>
+            <div id="lista-cobros" class="space-y-2 mb-1"></div>
+            <p id="err-cobros" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div class="flex justify-between items-end mb-2">
+              <h3 class="text-sm font-bold text-gray-700">🔴 Pagos (Prov.)</h3>
+              <button id="btn-add-pago" class="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded font-bold hover:bg-red-200">+ Agregar</button>
+            </div>
+            <div id="lista-pagos" class="space-y-2 mb-1"></div>
+            <p id="err-pagos" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-6">
-          <div>
-            <div class="flex justify-between items-end mb-2">
-              <h3 class="font-bold text-gray-700">🟢 Hitos de Cobro (Cliente)</h3>
-              <button id="btn-add-cobro" class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200">+ Agregar</button>
-            </div>
-            <div id="lista-cobros" class="space-y-2"></div>
-            <p id="err-cobros" class="text-xs text-red-500 mt-1 font-bold hidden">¡Atención! Los cobros no suman 100%</p>
-          </div>
-
-          <div>
-            <div class="flex justify-between items-end mb-2">
-              <h3 class="font-bold text-gray-700">🔴 Hitos de Pago (Proveedor)</h3>
-              <button id="btn-add-pago" class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded font-bold hover:bg-red-200">+ Agregar</button>
-            </div>
-            <div id="lista-pagos" class="space-y-2"></div>
-            <p id="err-pagos" class="text-xs text-red-500 mt-1 font-bold hidden">¡Atención! Los pagos no suman 100%</p>
+        <div class="w-2/3 flex flex-col gap-4">
+          <div id="panel-resultados" class="grid grid-cols-3 gap-4"></div>
+          
+          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1 relative min-h-[300px]">
+            <canvas id="grafico-caja"></canvas>
           </div>
         </div>
 
-      </div>
-
-      <div class="bg-white border-t border-gray-200 p-4">
-        <div id="panel-resultados" class="grid grid-cols-3 gap-4">
-          </div>
       </div>
     </div>
   `;
   document.body.appendChild(modal);
 
-  // 3. Funciones de Renderizado
+  let chartInstance = null;
+
   const renderListas = () => {
-    // Render Cobros
-    document.getElementById('lista-cobros').innerHTML = cobros.map((c, i) => `
-      <div class="flex gap-2 items-center bg-white p-2 rounded border border-gray-200">
-        <div class="w-1/2">
-          <label class="text-[10px] text-gray-500">Días desde inicio</label>
-          <input type="number" min="0" data-tipo="cobro" data-id="${c.id}" data-campo="dias" value="${c.dias}" class="sim-input w-full p-1 text-sm border rounded">
-        </div>
-        <div class="w-1/2">
-          <label class="text-[10px] text-gray-500">% a Cobrar</label>
-          <input type="number" min="0" max="100" data-tipo="cobro" data-id="${c.id}" data-campo="pct" value="${c.pct}" class="sim-input w-full p-1 text-sm border rounded">
-        </div>
-        <button onclick="window.eliminarHito('cobro', ${c.id})" class="text-red-400 hover:text-red-600 font-bold px-2 pt-4">✕</button>
+    document.getElementById('lista-cobros').innerHTML = cobros.map(c => `
+      <div class="flex gap-1 items-center">
+        <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="dias" value="${c.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
+        <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="pct" value="${c.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
+        <button onclick="window.eliminarHito('cobro', ${c.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
       </div>
     `).join('');
 
-    // Render Pagos
-    document.getElementById('lista-pagos').innerHTML = pagos.map((p, i) => `
-      <div class="flex gap-2 items-center bg-white p-2 rounded border border-gray-200">
-        <div class="w-1/2">
-          <label class="text-[10px] text-gray-500">Días desde inicio</label>
-          <input type="number" min="0" data-tipo="pago" data-id="${p.id}" data-campo="dias" value="${p.dias}" class="sim-input w-full p-1 text-sm border rounded">
-        </div>
-        <div class="w-1/2">
-          <label class="text-[10px] text-gray-500">% a Pagar</label>
-          <input type="number" min="0" max="100" data-tipo="pago" data-id="${p.id}" data-campo="pct" value="${p.pct}" class="sim-input w-full p-1 text-sm border rounded">
-        </div>
-        <button onclick="window.eliminarHito('pago', ${p.id})" class="text-red-400 hover:text-red-600 font-bold px-2 pt-4">✕</button>
+    document.getElementById('lista-pagos').innerHTML = pagos.map(p => `
+      <div class="flex gap-1 items-center">
+        <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="dias" value="${p.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
+        <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="pct" value="${p.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
+        <button onclick="window.eliminarHito('pago', ${p.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
       </div>
     `).join('');
 
     calcularFlujo();
   };
 
-  // 4. Lógica Fuerte: Calcular Flujo Financiero
   const calcularFlujo = () => {
     ventaTotal = parseFloat(document.getElementById('sim-venta').value) || 0;
     costoTotal = parseFloat(document.getElementById('sim-costo').value) || 0;
 
-    // Validar sumatorias
     const sumaCobros = cobros.reduce((s, c) => s + c.pct, 0);
     const sumaPagos = pagos.reduce((s, p) => s + p.pct, 0);
     
     document.getElementById('err-cobros').classList.toggle('hidden', sumaCobros === 100);
     document.getElementById('err-pagos').classList.toggle('hidden', sumaPagos === 100);
 
-    if (sumaCobros !== 100 || sumaPagos !== 100) {
-      document.getElementById('panel-resultados').innerHTML = '<div class="col-span-3 text-center text-red-500 font-bold">Corrige los porcentajes para que sumen 100%</div>';
-      return;
-    }
+    if (sumaCobros !== 100 || sumaPagos !== 100) return;
 
-    // Armar línea de tiempo
+    // Calcular hitos para el gráfico
     let eventos = [];
-    cobros.forEach(c => eventos.push({ dia: c.dias, monto: ventaTotal * (c.pct / 100), tipo: 'cobro' }));
-    pagos.forEach(p => eventos.push({ dia: p.dias, monto: -(costoTotal * (p.pct / 100)), tipo: 'pago' }));
+    cobros.forEach(c => eventos.push({ dia: c.dias, monto: ventaTotal * (c.pct / 100) }));
+    pagos.forEach(p => eventos.push({ dia: p.dias, monto: -(costoTotal * (p.pct / 100)) }));
 
-    // Ordenar por día
-    eventos.sort((a, b) => a.dia - b.dia);
+    // Agrupar por día
+    let cajaPorDia = {};
+    eventos.forEach(ev => {
+      cajaPorDia[ev.dia] = (cajaPorDia[ev.dia] || 0) + ev.monto;
+    });
 
+    const diasUnicos = Object.keys(cajaPorDia).map(Number).sort((a, b) => a - b);
+    const maxDia = diasUnicos.length > 0 ? diasUnicos[diasUnicos.length - 1] : 0;
+    
+    let labels = [];
+    let dataCaja = [];
     let cajaAcumulada = 0;
     let peorCaja = 0;
     let diaPeorCaja = 0;
 
-    eventos.forEach(ev => {
-      cajaAcumulada += ev.monto;
+    // Generar línea de tiempo continua
+    for (let i = 0; i <= maxDia + 5; i++) {
+      if (cajaPorDia[i]) {
+        cajaAcumulada += cajaPorDia[i];
+      }
+      labels.push(`Día ${i}`);
+      dataCaja.push(cajaAcumulada);
+      
       if (cajaAcumulada < peorCaja) {
         peorCaja = cajaAcumulada;
-        diaPeorCaja = ev.dia;
+        diaPeorCaja = i;
       }
-    });
+    }
 
     const utilidad = ventaTotal - costoTotal;
-    const comision = utilidad * 0.25;
 
-    // Mostrar Resultados
+    // Actualizar Panel
     document.getElementById('panel-resultados').innerHTML = `
-      <div class="bg-gray-100 p-3 rounded-xl text-center border ${peorCaja < 0 ? 'border-red-400 bg-red-50' : 'border-green-400 bg-green-50'}">
-        <p class="text-xs text-gray-500 font-bold uppercase">Valle de Caja Crítico</p>
-        <p class="text-2xl font-black ${peorCaja < 0 ? 'text-red-600' : 'text-green-600'}">
+      <div class="bg-gray-100 p-2 rounded-xl text-center border ${peorCaja < 0 ? 'border-red-400 bg-red-50' : 'border-green-400 bg-green-50'}">
+        <p class="text-[10px] text-gray-500 font-bold uppercase">Valle Crítico</p>
+        <p class="text-xl font-black ${peorCaja < 0 ? 'text-red-600' : 'text-green-600'}">
           ${peorCaja < 0 ? '- U$S ' + Math.abs(peorCaja).toFixed(2) : 'U$S 0.00'}
         </p>
-        <p class="text-[10px] text-gray-500">${peorCaja < 0 ? 'Faltante en el Día ' + diaPeorCaja : 'La caja nunca queda en negativo'}</p>
       </div>
-      <div class="bg-blue-50 p-3 rounded-xl text-center border border-blue-100">
-        <p class="text-xs text-blue-600 font-bold uppercase">Utilidad Proyectada</p>
+      <div class="bg-blue-50 p-2 rounded-xl text-center border border-blue-100">
+        <p class="text-[10px] text-blue-600 font-bold uppercase">Utilidad</p>
         <p class="text-xl font-black text-blue-800">U$S ${utilidad.toFixed(2)}</p>
-        <p class="text-[10px] text-blue-500">Rentabilidad: ${((utilidad/ventaTotal)*100).toFixed(1)}%</p>
       </div>
-      <div class="bg-purple-50 p-3 rounded-xl text-center border border-purple-100">
-        <p class="text-xs text-purple-600 font-bold uppercase">Comisión a Pagar (25%)</p>
-        <p class="text-xl font-black text-purple-800">U$S ${comision.toFixed(2)}</p>
-        <p class="text-[10px] text-purple-500">Al finalizar todo el flujo</p>
+      <div class="bg-purple-50 p-2 rounded-xl text-center border border-purple-100">
+        <p class="text-[10px] text-purple-600 font-bold uppercase">Comisión (25%)</p>
+        <p class="text-xl font-black text-purple-800">U$S ${(utilidad * 0.25).toFixed(2)}</p>
       </div>
     `;
+
+    // Actualizar o crear Gráfico
+    const ctx = document.getElementById('grafico-caja');
+    if (!ctx) return;
+
+    if (chartInstance) {
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets[0].data = dataCaja;
+      chartInstance.update();
+    } else {
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Saldo de Caja (U$S)',
+            data: dataCaja,
+            borderColor: '#059669', // Verde Dacar
+            backgroundColor: 'rgba(5, 150, 105, 0.2)',
+            fill: true,
+            stepped: 'after', // Hace que el gráfico sea escalonado, más realista para finanzas
+            tension: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { grid: { color: '#e5e7eb' } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
   };
 
-  // 5. Event Listeners Reales
   modal.addEventListener('input', (e) => {
     if (e.target.classList.contains('sim-input')) {
       const id = parseInt(e.target.dataset.id);
@@ -711,9 +736,7 @@ export async function renderFinanzas(contenedor, perfil) {
       if (tipo === 'pago') pagos.find(p => p.id === id)[campo] = valor;
       calcularFlujo();
     }
-    if (e.target.id === 'sim-venta' || e.target.id === 'sim-costo') {
-      calcularFlujo();
-    }
+    if (e.target.id === 'sim-venta' || e.target.id === 'sim-costo') calcularFlujo();
   });
 
   window.eliminarHito = (tipo, id) => {
@@ -733,11 +756,11 @@ export async function renderFinanzas(contenedor, perfil) {
   });
 
   document.getElementById('btn-cerrar-sim').addEventListener('click', () => {
+    if (chartInstance) chartInstance.destroy();
     modal.remove();
     delete window.eliminarHito;
   });
 
   // Init
-  renderListas();
-};
-}
+  setTimeout(() => renderListas(), 100);
+}};
