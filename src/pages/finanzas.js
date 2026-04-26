@@ -612,14 +612,13 @@ let ventaTotal = 0;
   const inputBusca = modal.querySelector('#sim-busca-ppto')
   const dropPpto = modal.querySelector('#sim-drop-ppto')
 
-const { data: pptos } = await supabase
+  supabase
     .from('cotizaciones')
     .select('id, numero, total_final, total_neto, clientes(nombre)')
     .order('numero', { ascending: false })
     .limit(100)
-
-  inputBusca.addEventListener('input', e => {
-          inputBusca.addEventListener('input', e => {
+    .then(({ data: pptos }) => {
+      inputBusca.addEventListener('input', e => {
         const txt = e.target.value.toLowerCase()
         if (!txt) { dropPpto.classList.add('hidden'); return }
         const filtrados = (pptos || []).filter(p =>
@@ -627,9 +626,10 @@ const { data: pptos } = await supabase
           String(p.numero).includes(txt)
         ).slice(0, 8)
         if (!filtrados.length) { dropPpto.classList.add('hidden'); return }
+        const nomEsc = (n) => String(n||'').replace(/'/g,"\\'")
         dropPpto.innerHTML = filtrados.map(p => `
           <div class="px-3 py-2 text-xs cursor-pointer hover:bg-green-50 border-b border-gray-100"
-            onclick="window.cargarPptoSim('${p.id}', ${p.total_final}, ${p.total_neto}, '${esc(p.clientes?.nombre || '')}', ${p.numero})">
+            onclick="window.cargarPptoSim('${p.id}', ${p.total_final}, ${p.total_neto}, '${nomEsc(p.clientes?.nombre)}', ${p.numero})">
             <span class="font-bold">2026-${String(p.numero).padStart(3,'0')}</span>
             <span class="text-gray-500 ml-2">${p.clientes?.nombre || ''}</span>
             <span class="text-green-700 ml-2 font-medium">U$S ${(p.total_final||0).toFixed(0)}</span>
@@ -649,8 +649,8 @@ const { data: pptos } = await supabase
         calcularFlujo()
       }
     })
-  let chartInstance = null;
 
+  let chartInstance = null;
   const renderListas = () => {
     document.getElementById('lista-cobros').innerHTML = cobros.map(c => `
       <div class="flex gap-1 items-center">
