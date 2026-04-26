@@ -536,9 +536,11 @@ export async function renderFinanzas(contenedor, perfil) {
 
   renderPendientes()
 window.abrirSimuladorFlujo = () => {
-  let ventaTotal = 10000;
-  let costoTotal = 7500;
-  let cobros = [
+let ventaTotal = 0;
+  let costoTotal = 0;
+  let pptoSeleccionado = null;
+  let saldoInicial = 0;
+    let cobros = [
     { id: 1, dias: 0, pct: 33 },
     { id: 2, dias: 30, pct: 33 },
     { id: 3, dias: 60, pct: 34 }
@@ -561,6 +563,14 @@ window.abrirSimuladorFlujo = () => {
         
         <div class="w-1/3 flex flex-col gap-4">
           <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <div class="mb-3">
+              <label class="block text-xs font-bold text-gray-500 mb-1">Cargar desde presupuesto</label>
+              <input type="text" id="sim-busca-ppto" placeholder="🔍 Buscar cliente u N° ppto..."
+                class="w-full border-gray-300 rounded-lg text-xs" />
+              <div id="sim-drop-ppto" class="hidden mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"></div>
+            </div>
+            <label class="block text-xs font-bold text-gray-500 mb-1">💵 Fondos en caja (U$S)</label>
+            <input type="number" id="sim-saldo" value="0" class="w-full border-gray-300 rounded-lg font-bold text-blue-700 mb-3" placeholder="0.00" />
             <label class="block text-xs font-bold text-gray-500 mb-1">Venta Total (U$S)</label>
             <input type="number" id="sim-venta" value="${ventaTotal}" class="w-full border-gray-300 rounded-lg font-bold text-green-700" />
             <label class="block text-xs font-bold text-gray-500 mt-2 mb-1">Costo Materiales (U$S)</label>
@@ -598,7 +608,46 @@ window.abrirSimuladorFlujo = () => {
     </div>
   `;
   document.body.appendChild(modal);
+// Buscador de presupuestos
+  const inputBusca = modal.querySelector('#sim-busca-ppto')
+  const dropPpto = modal.querySelector('#sim-drop-ppto')
 
+  supabase
+    .from('cotizaciones')
+    .select('id, numero, total_final, total_neto, clientes(nombre)')
+    .order('numero', { ascending: false })
+    .limit(100)
+    .then(({ data: pptos }) => {
+      inputBusca.addEventListener('input', e => {
+        const txt = e.target.value.toLowerCase()
+        if (!txt) { dropPpto.classList.add('hidden'); return }
+        const filtrados = (pptos || []).filter(p =>
+          p.clientes?.nombre?.toLowerCase().includes(txt) ||
+          String(p.numero).includes(txt)
+        ).slice(0, 8)
+        if (!filtrados.length) { dropPpto.classList.add('hidden'); return }
+        dropPpto.innerHTML = filtrados.map(p => `
+          <div class="px-3 py-2 text-xs cursor-pointer hover:bg-green-50 border-b border-gray-100"
+            onclick="window.cargarPptoSim('${p.id}', ${p.total_final}, ${p.total_neto}, '${esc(p.clientes?.nombre || '')}', ${p.numero})">
+            <span class="font-bold">2026-${String(p.numero).padStart(3,'0')}</span>
+            <span class="text-gray-500 ml-2">${p.clientes?.nombre || ''}</span>
+            <span class="text-green-700 ml-2 font-medium">U$S ${(p.total_final||0).toFixed(0)}</span>
+          </div>
+        `).join('')
+        dropPpto.classList.remove('hidden')
+      })
+
+      window.cargarPptoSim = (id, totalFinal, totalNeto, nombre, numero) => {
+        pptoSeleccionado = { id, nombre, numero }
+        ventaTotal = totalFinal
+        costoTotal = totalNeto
+        document.getElementById('sim-venta').value = totalFinal.toFixed(2)
+        document.getElementById('sim-costo').value = totalNeto.toFixed(2)
+        inputBusca.value = `2026-${String(numero).padStart(3,'0')} — ${nombre}`
+        dropPpto.classList.add('hidden')
+        calcularFlujo()
+      }
+    })
   let chartInstance = null;
 
   const renderListas = () => {
@@ -624,6 +673,7 @@ window.abrirSimuladorFlujo = () => {
   const calcularFlujo = () => {
     ventaTotal = parseFloat(document.getElementById('sim-venta').value) || 0;
     costoTotal = parseFloat(document.getElementById('sim-costo').value) || 0;
+    saldoInicial = parseFloat(document.getElementById('sim-saldo').value) || 0;
 
     const sumaCobros = cobros.reduce((s, c) => s + c.pct, 0);
     const sumaPagos = pagos.reduce((s, p) => s + p.pct, 0);
@@ -649,7 +699,7 @@ window.abrirSimuladorFlujo = () => {
     
     let labels = [];
     let dataCaja = [];
-    let cajaAcumulada = 0;
+let cajaAcumulada = saldoInicial;
     let peorCaja = 0;
     let diaPeorCaja = 0;
 
