@@ -1,29 +1,38 @@
 import { supabase } from '../supabase.js'
 
 export async function renderFinanzas(contenedor, perfil) {
+  // Roles definidos por Gustavo
+  const esGerencia = perfil?.role === 'gerencia'
+  const esAdmin    = perfil?.role === 'administrativo'
+  const esVendedor = perfil?.role === 'vendedor'
+
   contenedor.innerHTML = `
     <div class="p-4 max-w-5xl mx-auto">
-      <div class="flex gap-2 mb-6 border-b border-gray-200">
+      <div class="flex gap-2 mb-6 border-b border-gray-200 flex-wrap">
         <button onclick="tabFin('pendientes')" id="tab-pendientes"
           class="px-4 py-2 text-sm font-medium border-b-2 border-green-700 text-green-700">
-          ⏳ Pendientes de cobro
+          ⏳ ${esVendedor ? 'Estado de ventas' : 'Pendientes de cobro'}
         </button>
         <button onclick="tabFin('cobros')" id="tab-cobros"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           💰 Cobros registrados
         </button>
+        ${!esVendedor ? `
         <button onclick="tabFin('proveedor')" id="tab-proveedor"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           🏭 Pagos proveedor
-        </button>
+        </button>` : ''}
+        ${esGerencia ? `
         <button onclick="tabFin('comisiones')" id="tab-comisiones"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           🤝 Comisiones
-        </button>
-<button onclick="window.abrirSimuladorFlujo()"
+        </button>` : ''}
+        ${esGerencia || esAdmin ? `
+        <button onclick="window.abrirSimuladorFlujo()"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 ml-auto">
           📊 Simulador caja
-        </button>      </div>
+        </button>` : ''}
+      </div>
       <div id="fin-content"></div>
     </div>
   `
@@ -31,9 +40,12 @@ export async function renderFinanzas(contenedor, perfil) {
   window.tabFin = (tab) => {
     ;['pendientes','cobros','proveedor','comisiones'].forEach(t => {
       const btn = document.getElementById(`tab-${t}`)
-      btn.className = t === tab
-        ? 'px-4 py-2 text-sm font-medium border-b-2 border-green-700 text-green-700'
-        : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700'
+      // ESCUDO: Solo cambia el color si el botón existe en la pantalla para este rol
+      if (btn) {
+        btn.className = t === tab
+          ? 'px-4 py-2 text-sm font-medium border-b-2 border-green-700 text-green-700'
+          : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700'
+      }
     })
     if (tab === 'pendientes')  renderPendientes()
     if (tab === 'cobros')      renderCobros()
@@ -185,7 +197,7 @@ export async function renderFinanzas(contenedor, perfil) {
                       <td class="px-2 py-1 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
                       <td class="px-2 py-1 text-right text-blue-600">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                       <td class="px-2 py-1 text-center">
-                        <button onclick="borrarCobroFicha('${c.id}', '${cotId}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
+                        ${esGerencia || esAdmin ? `<button onclick="borrarCobroFicha('${c.id}', '${cotId}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>` : ''}
                       </td>
                     </tr>
                   `).join('')}
@@ -194,6 +206,7 @@ export async function renderFinanzas(contenedor, perfil) {
             ` : '<p class="text-gray-400 text-xs">Sin cobros aún.</p>'}
           </div>
 
+          ${esGerencia || esAdmin ? `
           <div class="bg-gray-50 rounded-lg p-3 mb-4">
             <p class="text-xs font-semibold text-gray-600 mb-2">Configuración de cobro</p>
             <div class="grid grid-cols-3 gap-2">
@@ -215,8 +228,9 @@ export async function renderFinanzas(contenedor, perfil) {
               </div>
             </div>
           </div>
+          ` : ''}
 
-          ${saldo > 0 ? `
+          ${saldo > 0 && (esGerencia || esAdmin) ? `
           <div class="border-t pt-4">
             <h4 class="font-semibold text-gray-700 text-sm mb-2">Registrar cobro</h4>
             <div class="grid grid-cols-2 gap-2 mb-2">
@@ -251,7 +265,7 @@ export async function renderFinanzas(contenedor, perfil) {
             </button>
             <p id="ficha-msg" class="hidden text-xs text-green-700 mt-1 text-center"></p>
           </div>
-          ` : '<div class="bg-green-50 rounded-lg p-3 text-center text-sm font-semibold text-green-700">✅ Venta completamente cobrada</div>'}
+          ` : saldo <= 0 ? '<div class="bg-green-50 rounded-lg p-3 text-center text-sm font-semibold text-green-700">✅ Venta completamente cobrada</div>' : ''}
         </div>
       `
       document.body.appendChild(modal)
@@ -351,7 +365,7 @@ export async function renderFinanzas(contenedor, perfil) {
                 <td class="px-3 py-2 text-right text-blue-700">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                 <td class="px-3 py-2 text-center text-gray-500">${c.tc || '-'}</td>
                 <td class="px-3 py-2 text-center">
-                  <button onclick="borrarCobro('${c.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
+                  ${esGerencia || esAdmin ? `<button onclick="borrarCobro('${c.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -535,284 +549,280 @@ export async function renderFinanzas(contenedor, perfil) {
   }
 
   renderPendientes()
-window.abrirSimuladorFlujo = () => {
-let ventaTotal = 0;
-  let costoTotal = 0;
-  let pptoSeleccionado = null;
-  let saldoInicial = 0;
+
+  window.abrirSimuladorFlujo = () => {
+    let ventaTotal = 0;
+    let costoTotal = 0;
+    let pptoSeleccionado = null;
+    let saldoInicial = 0;
     let cobros = [
-    { id: 1, dias: 0, pct: 33 },
-    { id: 2, dias: 30, pct: 33 },
-    { id: 3, dias: 60, pct: 34 }
-  ];
-  let pagos = [
-    { id: 1, dias: 15, pct: 100 }
-  ];
+      { id: 1, dias: 0, pct: 33 },
+      { id: 2, dias: 30, pct: 33 },
+      { id: 3, dias: 60, pct: 34 }
+    ];
+    let pagos = [
+      { id: 1, dias: 15, pct: 100 }
+    ];
 
-  const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;';
-  
-  modal.innerHTML = `
-    <div class="bg-white rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden shadow-2xl">
-      <div class="bg-gray-900 p-4 flex justify-between items-center text-white">
-        <h2 class="text-lg font-bold">📊 Simulador Dinámico de Flujo de Caja</h2>
-        <button id="btn-cerrar-sim" class="text-gray-400 hover:text-white text-2xl font-bold">×</button>
-      </div>
-
-      <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex gap-6">
-        
-        <div class="w-1/3 flex flex-col gap-4">
-          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <div class="mb-3">
-              <label class="block text-xs font-bold text-gray-500 mb-1">Cargar desde presupuesto</label>
-              <input type="text" id="sim-busca-ppto" placeholder="🔍 Buscar cliente u N° ppto..."
-                class="w-full border-gray-300 rounded-lg text-xs" />
-              <div id="sim-drop-ppto" class="hidden mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"></div>
-            </div>
-            <label class="block text-xs font-bold text-gray-500 mb-1">💵 Fondos en caja (U$S)</label>
-            <input type="number" id="sim-saldo" value="0" class="w-full border-gray-300 rounded-lg font-bold text-blue-700 mb-3" placeholder="0.00" />
-            <label class="block text-xs font-bold text-gray-500 mb-1">Venta Total (U$S)</label>
-            <input type="number" id="sim-venta" value="${ventaTotal}" class="w-full border-gray-300 rounded-lg font-bold text-green-700" />
-            <label class="block text-xs font-bold text-gray-500 mt-2 mb-1">Costo Materiales (U$S)</label>
-            <input type="number" id="sim-costo" value="${costoTotal}" class="w-full border-gray-300 rounded-lg font-bold text-red-700" />
-          </div>
-
-          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <div class="flex justify-between items-end mb-2">
-              <h3 class="text-sm font-bold text-gray-700">🟢 Cobros</h3>
-              <button id="btn-add-cobro" class="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200">+ Agregar</button>
-            </div>
-            <div id="lista-cobros" class="space-y-2 mb-1"></div>
-            <p id="err-cobros" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
-          </div>
-
-          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-            <div class="flex justify-between items-end mb-2">
-              <h3 class="text-sm font-bold text-gray-700">🔴 Pagos (Prov.)</h3>
-              <button id="btn-add-pago" class="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded font-bold hover:bg-red-200">+ Agregar</button>
-            </div>
-            <div id="lista-pagos" class="space-y-2 mb-1"></div>
-            <p id="err-pagos" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
-          </div>
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;';
+    
+    modal.innerHTML = `
+      <div class="bg-white rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col overflow-hidden shadow-2xl">
+        <div class="bg-gray-900 p-4 flex justify-between items-center text-white">
+          <h2 class="text-lg font-bold">📊 Simulador Dinámico de Flujo de Caja</h2>
+          <button id="btn-cerrar-sim" class="text-gray-400 hover:text-white text-2xl font-bold">×</button>
         </div>
 
-        <div class="w-2/3 flex flex-col gap-4">
-          <div id="panel-resultados" class="grid grid-cols-3 gap-4"></div>
+        <div class="p-6 overflow-y-auto flex-1 bg-gray-50 flex gap-6">
           
-          <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1 relative min-h-[300px]">
-            <canvas id="grafico-caja"></canvas>
+          <div class="w-1/3 flex flex-col gap-4">
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+            <div class="mb-3">
+                <label class="block text-xs font-bold text-gray-500 mb-1">Cargar desde presupuesto</label>
+                <input type="text" id="sim-busca-ppto" placeholder="🔍 Buscar cliente u N° ppto..."
+                  class="w-full border-gray-300 rounded-lg text-xs" />
+                <div id="sim-drop-ppto" class="hidden mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"></div>
+              </div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">💵 Fondos en caja (U$S)</label>
+              <input type="number" id="sim-saldo" value="0" class="w-full border-gray-300 rounded-lg font-bold text-blue-700 mb-3" placeholder="0.00" />
+              <label class="block text-xs font-bold text-gray-500 mb-1">Venta Total (U$S)</label>
+              <input type="number" id="sim-venta" value="${ventaTotal}" class="w-full border-gray-300 rounded-lg font-bold text-green-700" />
+              <label class="block text-xs font-bold text-gray-500 mt-2 mb-1">Costo Materiales (U$S)</label>
+              <input type="number" id="sim-costo" value="${costoTotal}" class="w-full border-gray-300 rounded-lg font-bold text-red-700" />
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div class="flex justify-between items-end mb-2">
+                <h3 class="text-sm font-bold text-gray-700">🟢 Cobros</h3>
+                <button id="btn-add-cobro" class="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold hover:bg-green-200">+ Agregar</button>
+              </div>
+              <div id="lista-cobros" class="space-y-2 mb-1"></div>
+              <p id="err-cobros" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+              <div class="flex justify-between items-end mb-2">
+                <h3 class="text-sm font-bold text-gray-700">🔴 Pagos (Prov.)</h3>
+                <button id="btn-add-pago" class="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded font-bold hover:bg-red-200">+ Agregar</button>
+              </div>
+              <div id="lista-pagos" class="space-y-2 mb-1"></div>
+              <p id="err-pagos" class="text-[10px] text-red-500 font-bold hidden">La suma debe ser 100%</p>
+            </div>
           </div>
+
+          <div class="w-2/3 flex flex-col gap-4">
+            <div id="panel-resultados" class="grid grid-cols-3 gap-4"></div>
+            
+            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex-1 relative min-h-[300px]">
+              <canvas id="grafico-caja"></canvas>
+            </div>
+          </div>
+
         </div>
-
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-// Buscador de presupuestos
-  const inputBusca = modal.querySelector('#sim-busca-ppto')
-  const dropPpto = modal.querySelector('#sim-drop-ppto')
-
-  supabase
-    .from('cotizaciones')
-    .select('id, numero, total_final, total_neto, clientes(nombre)')
-    .order('numero', { ascending: false })
-    .limit(100)
-    .then(({ data: pptos }) => {
-      inputBusca.addEventListener('input', e => {
-        const txt = e.target.value.toLowerCase()
-        if (!txt) { dropPpto.classList.add('hidden'); return }
-        const filtrados = (pptos || []).filter(p =>
-          p.clientes?.nombre?.toLowerCase().includes(txt) ||
-          String(p.numero).includes(txt)
-        ).slice(0, 8)
-        if (!filtrados.length) { dropPpto.classList.add('hidden'); return }
-        const nomEsc = (n) => String(n||'').replace(/'/g,"\\'")
-        dropPpto.innerHTML = filtrados.map(p => `
-          <div class="px-3 py-2 text-xs cursor-pointer hover:bg-green-50 border-b border-gray-100"
-            onclick="window.cargarPptoSim('${p.id}', ${p.total_final}, ${p.total_neto}, '${nomEsc(p.clientes?.nombre)}', ${p.numero})">
-            <span class="font-bold">2026-${String(p.numero).padStart(3,'0')}</span>
-            <span class="text-gray-500 ml-2">${p.clientes?.nombre || ''}</span>
-            <span class="text-green-700 ml-2 font-medium">U$S ${(p.total_final||0).toFixed(0)}</span>
-          </div>
-        `).join('')
-        dropPpto.classList.remove('hidden')
-      })
-
-      window.cargarPptoSim = (id, totalFinal, totalNeto, nombre, numero) => {
-        pptoSeleccionado = { id, nombre, numero }
-        ventaTotal = totalFinal
-        costoTotal = totalNeto
-        document.getElementById('sim-venta').value = totalFinal.toFixed(2)
-        document.getElementById('sim-costo').value = totalNeto.toFixed(2)
-        inputBusca.value = `2026-${String(numero).padStart(3,'0')} — ${nombre}`
-        dropPpto.classList.add('hidden')
-        calcularFlujo()
-      }
-    })
-
-  let chartInstance = null;
-  const renderListas = () => {
-    document.getElementById('lista-cobros').innerHTML = cobros.map(c => `
-      <div class="flex gap-1 items-center">
-        <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="dias" value="${c.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
-        <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="pct" value="${c.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
-        <button onclick="window.eliminarHito('cobro', ${c.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
-      </div>
-    `).join('');
-
-    document.getElementById('lista-pagos').innerHTML = pagos.map(p => `
-      <div class="flex gap-1 items-center">
-        <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="dias" value="${p.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
-        <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="pct" value="${p.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
-        <button onclick="window.eliminarHito('pago', ${p.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
-      </div>
-    `).join('');
-
-    calcularFlujo();
-  };
-
-  const calcularFlujo = () => {
-    ventaTotal = parseFloat(document.getElementById('sim-venta').value) || 0;
-    costoTotal = parseFloat(document.getElementById('sim-costo').value) || 0;
-    saldoInicial = parseFloat(document.getElementById('sim-saldo').value) || 0;
-
-    const sumaCobros = cobros.reduce((s, c) => s + c.pct, 0);
-    const sumaPagos = pagos.reduce((s, p) => s + p.pct, 0);
-    
-    document.getElementById('err-cobros').classList.toggle('hidden', sumaCobros === 100);
-    document.getElementById('err-pagos').classList.toggle('hidden', sumaPagos === 100);
-
-    if (sumaCobros !== 100 || sumaPagos !== 100) return;
-
-    // Calcular hitos para el gráfico
-    let eventos = [];
-    cobros.forEach(c => eventos.push({ dia: c.dias, monto: ventaTotal * (c.pct / 100) }));
-    pagos.forEach(p => eventos.push({ dia: p.dias, monto: -(costoTotal * (p.pct / 100)) }));
-
-    // Agrupar por día
-    let cajaPorDia = {};
-    eventos.forEach(ev => {
-      cajaPorDia[ev.dia] = (cajaPorDia[ev.dia] || 0) + ev.monto;
-    });
-
-    const diasUnicos = Object.keys(cajaPorDia).map(Number).sort((a, b) => a - b);
-    const maxDia = diasUnicos.length > 0 ? diasUnicos[diasUnicos.length - 1] : 0;
-    
-    let labels = [];
-    let dataCaja = [];
-let cajaAcumulada = saldoInicial;
-    let peorCaja = 0;
-    let diaPeorCaja = 0;
-
-    // Generar línea de tiempo continua
-    for (let i = 0; i <= maxDia + 5; i++) {
-      if (cajaPorDia[i]) {
-        cajaAcumulada += cajaPorDia[i];
-      }
-      labels.push(`Día ${i}`);
-      dataCaja.push(cajaAcumulada);
-      
-      if (cajaAcumulada < peorCaja) {
-        peorCaja = cajaAcumulada;
-        diaPeorCaja = i;
-      }
-    }
-
-    const utilidad = ventaTotal - costoTotal;
-
-    // Actualizar Panel
-    document.getElementById('panel-resultados').innerHTML = `
-      <div class="bg-gray-100 p-2 rounded-xl text-center border ${peorCaja < 0 ? 'border-red-400 bg-red-50' : 'border-green-400 bg-green-50'}">
-        <p class="text-[10px] text-gray-500 font-bold uppercase">Valle Crítico</p>
-        <p class="text-xl font-black ${peorCaja < 0 ? 'text-red-600' : 'text-green-600'}">
-          ${peorCaja < 0 ? '- U$S ' + Math.abs(peorCaja).toFixed(2) : 'U$S 0.00'}
-        </p>
-      </div>
-      <div class="bg-blue-50 p-2 rounded-xl text-center border border-blue-100">
-        <p class="text-[10px] text-blue-600 font-bold uppercase">Utilidad</p>
-        <p class="text-xl font-black text-blue-800">U$S ${utilidad.toFixed(2)}</p>
-      </div>
-      <div class="bg-purple-50 p-2 rounded-xl text-center border border-purple-100">
-        <p class="text-[10px] text-purple-600 font-bold uppercase">Comisión (25%)</p>
-        <p class="text-xl font-black text-purple-800">U$S ${(utilidad * 0.25).toFixed(2)}</p>
       </div>
     `;
+    document.body.appendChild(modal);
 
-    // Actualizar o crear Gráfico
-    const ctx = document.getElementById('grafico-caja');
-    if (!ctx) return;
+    const inputBusca = modal.querySelector('#sim-busca-ppto')
+    const dropPpto = modal.querySelector('#sim-drop-ppto')
 
-    if (chartInstance) {
-      chartInstance.data.labels = labels;
-      chartInstance.data.datasets[0].data = dataCaja;
-      chartInstance.update();
-    } else {
-      chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Saldo de Caja (U$S)',
-            data: dataCaja,
-            borderColor: '#059669', // Verde Dacar
-            backgroundColor: 'rgba(5, 150, 105, 0.2)',
-            fill: true,
-            stepped: 'after', // Hace que el gráfico sea escalonado, más realista para finanzas
-            tension: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            y: { grid: { color: '#e5e7eb' } },
-            x: { grid: { display: false } }
-          }
+    supabase
+      .from('cotizaciones')
+      .select('id, numero, total_final, total_neto, clientes(nombre)')
+      .order('numero', { ascending: false })
+      .limit(100)
+      .then(({ data: pptos }) => {
+        inputBusca.addEventListener('input', e => {
+          const txt = e.target.value.toLowerCase()
+          if (!txt) { dropPpto.classList.add('hidden'); return }
+          const filtrados = (pptos || []).filter(p =>
+            p.clientes?.nombre?.toLowerCase().includes(txt) ||
+            String(p.numero).includes(txt)
+          ).slice(0, 8)
+          if (!filtrados.length) { dropPpto.classList.add('hidden'); return }
+          const nomEsc = (n) => String(n||'').replace(/'/g,"\\'")
+          dropPpto.innerHTML = filtrados.map(p => `
+            <div class="px-3 py-2 text-xs cursor-pointer hover:bg-green-50 border-b border-gray-100"
+              onclick="window.cargarPptoSim('${p.id}', ${p.total_final}, ${p.total_neto}, '${nomEsc(p.clientes?.nombre)}', ${p.numero})">
+              <span class="font-bold">2026-${String(p.numero).padStart(3,'0')}</span>
+              <span class="text-gray-500 ml-2">${p.clientes?.nombre || ''}</span>
+              <span class="text-green-700 ml-2 font-medium">U$S ${(p.total_final||0).toFixed(0)}</span>
+            </div>
+          `).join('')
+          dropPpto.classList.remove('hidden')
+        })
+
+        window.cargarPptoSim = (id, totalFinal, totalNeto, nombre, numero) => {
+          pptoSeleccionado = { id, nombre, numero }
+          ventaTotal = totalFinal
+          costoTotal = totalNeto
+          document.getElementById('sim-venta').value = totalFinal.toFixed(2)
+          document.getElementById('sim-costo').value = totalNeto.toFixed(2)
+          inputBusca.value = `2026-${String(numero).padStart(3,'0')} — ${nombre}`
+          dropPpto.classList.add('hidden')
+          calcularFlujo()
         }
-      });
-    }
-  };
+      })
 
-  modal.addEventListener('input', (e) => {
-    if (e.target.classList.contains('sim-input')) {
-      const id = parseInt(e.target.dataset.id);
-      const tipo = e.target.dataset.tipo;
-      const campo = e.target.dataset.campo;
-      const valor = parseFloat(e.target.value) || 0;
-      
-      if (tipo === 'cobro') cobros.find(c => c.id === id)[campo] = valor;
-      if (tipo === 'pago') pagos.find(p => p.id === id)[campo] = valor;
+    let chartInstance = null;
+    const renderListas = () => {
+      document.getElementById('lista-cobros').innerHTML = cobros.map(c => `
+        <div class="flex gap-1 items-center">
+          <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="dias" value="${c.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
+          <input type="number" data-tipo="cobro" data-id="${c.id}" data-campo="pct" value="${c.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
+          <button onclick="window.eliminarHito('cobro', ${c.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
+        </div>
+      `).join('');
+
+      document.getElementById('lista-pagos').innerHTML = pagos.map(p => `
+        <div class="flex gap-1 items-center">
+          <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="dias" value="${p.dias}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="Días">
+          <input type="number" data-tipo="pago" data-id="${p.id}" data-campo="pct" value="${p.pct}" class="sim-input w-1/2 p-1 text-xs border rounded" placeholder="%">
+          <button onclick="window.eliminarHito('pago', ${p.id})" class="text-red-400 hover:text-red-600 font-bold px-1">✕</button>
+        </div>
+      `).join('');
+
       calcularFlujo();
-    }
-    if (e.target.id === 'sim-venta' || e.target.id === 'sim-costo') calcularFlujo();
-  });
+    };
 
-  window.eliminarHito = (tipo, id) => {
-    if (tipo === 'cobro' && cobros.length > 1) cobros = cobros.filter(c => c.id !== id);
-    if (tipo === 'pago' && pagos.length > 1) pagos = pagos.filter(p => p.id !== id);
-    renderListas();
+    const calcularFlujo = () => {
+      ventaTotal = parseFloat(document.getElementById('sim-venta').value) || 0;
+      costoTotal = parseFloat(document.getElementById('sim-costo').value) || 0;
+      saldoInicial = parseFloat(document.getElementById('sim-saldo').value) || 0;
+
+      const sumaCobros = cobros.reduce((s, c) => s + c.pct, 0);
+      const sumaPagos = pagos.reduce((s, p) => s + p.pct, 0);
+      
+      document.getElementById('err-cobros').classList.toggle('hidden', sumaCobros === 100);
+      document.getElementById('err-pagos').classList.toggle('hidden', sumaPagos === 100);
+
+      if (sumaCobros !== 100 || sumaPagos !== 100) return;
+
+      let eventos = [];
+      cobros.forEach(c => eventos.push({ dia: c.dias, monto: ventaTotal * (c.pct / 100) }));
+      pagos.forEach(p => eventos.push({ dia: p.dias, monto: -(costoTotal * (p.pct / 100)) }));
+
+      let cajaPorDia = {};
+      eventos.forEach(ev => {
+        cajaPorDia[ev.dia] = (cajaPorDia[ev.dia] || 0) + ev.monto;
+      });
+
+      const diasUnicos = Object.keys(cajaPorDia).map(Number).sort((a, b) => a - b);
+      const maxDia = diasUnicos.length > 0 ? diasUnicos[diasUnicos.length - 1] : 0;
+      
+      let labels = [];
+      let dataCaja = [];
+      let cajaAcumulada = saldoInicial;
+      let peorCaja = saldoInicial; // Se ajusta para que no asuma 0 si arranca en positivo
+      let diaPeorCaja = 0;
+
+      for (let i = 0; i <= maxDia + 5; i++) {
+        if (cajaPorDia[i]) {
+          cajaAcumulada += cajaPorDia[i];
+        }
+        labels.push(`Día ${i}`);
+        dataCaja.push(cajaAcumulada);
+        
+        if (cajaAcumulada < peorCaja) {
+          peorCaja = cajaAcumulada;
+          diaPeorCaja = i;
+        }
+      }
+
+      const utilidad = ventaTotal - costoTotal;
+
+      document.getElementById('panel-resultados').innerHTML = `
+        <div class="bg-gray-100 p-2 rounded-xl text-center border ${peorCaja < 0 ? 'border-red-400 bg-red-50' : 'border-green-400 bg-green-50'}">
+          <p class="text-[10px] text-gray-500 font-bold uppercase">Valle Crítico</p>
+          <p class="text-xl font-black ${peorCaja < 0 ? 'text-red-600' : 'text-green-600'}">
+            ${peorCaja < 0 ? '- U$S ' + Math.abs(peorCaja).toFixed(2) : 'U$S 0.00'}
+          </p>
+        </div>
+        <div class="bg-blue-50 p-2 rounded-xl text-center border border-blue-100">
+          <p class="text-[10px] text-blue-600 font-bold uppercase">Utilidad</p>
+          <p class="text-xl font-black text-blue-800">U$S ${utilidad.toFixed(2)}</p>
+        </div>
+        <div class="bg-purple-50 p-2 rounded-xl text-center border border-purple-100">
+          <p class="text-[10px] text-purple-600 font-bold uppercase">Comisión (25%)</p>
+          <p class="text-xl font-black text-purple-800">U$S ${(utilidad * 0.25).toFixed(2)}</p>
+        </div>
+      `;
+
+      const ctx = document.getElementById('grafico-caja');
+      if (!ctx) return;
+
+      if (chartInstance) {
+        chartInstance.data.labels = labels;
+        chartInstance.data.datasets[0].data = dataCaja;
+        chartInstance.update();
+      } else {
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Saldo de Caja (U$S)',
+              data: dataCaja,
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.2)',
+              fill: true,
+              stepped: 'after',
+              tension: 0
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false }
+            },
+            scales: {
+              y: { grid: { color: '#e5e7eb' } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      }
+    };
+
+    modal.addEventListener('input', (e) => {
+      if (e.target.classList.contains('sim-input')) {
+        const id = parseInt(e.target.dataset.id);
+        const tipo = e.target.dataset.tipo;
+        const campo = e.target.dataset.campo;
+        const valor = parseFloat(e.target.value) || 0;
+        
+        if (tipo === 'cobro') cobros.find(c => c.id === id)[campo] = valor;
+        if (tipo === 'pago') pagos.find(p => p.id === id)[campo] = valor;
+        calcularFlujo();
+      }
+      if (e.target.id === 'sim-venta' || e.target.id === 'sim-costo' || e.target.id === 'sim-saldo') calcularFlujo();
+    });
+
+    window.eliminarHito = (tipo, id) => {
+      if (tipo === 'cobro' && cobros.length > 1) cobros = cobros.filter(c => c.id !== id);
+      if (tipo === 'pago' && pagos.length > 1) pagos = pagos.filter(p => p.id !== id);
+      renderListas();
+    };
+
+    document.getElementById('btn-add-cobro').addEventListener('click', () => {
+      cobros.push({ id: Date.now(), dias: 0, pct: 0 });
+      renderListas();
+    });
+
+    document.getElementById('btn-add-pago').addEventListener('click', () => {
+      pagos.push({ id: Date.now(), dias: 0, pct: 0 });
+      renderListas();
+    });
+
+    document.getElementById('btn-cerrar-sim').addEventListener('click', () => {
+      if (chartInstance) chartInstance.destroy();
+      modal.remove();
+      delete window.eliminarHito;
+    });
+
+    setTimeout(() => renderListas(), 100);
+    function esc(s) { return String(s || '').replace(/'/g, "\\'") }
   };
-
-  document.getElementById('btn-add-cobro').addEventListener('click', () => {
-    cobros.push({ id: Date.now(), dias: 0, pct: 0 });
-    renderListas();
-  });
-
-  document.getElementById('btn-add-pago').addEventListener('click', () => {
-    pagos.push({ id: Date.now(), dias: 0, pct: 0 });
-    renderListas();
-  });
-
-  document.getElementById('btn-cerrar-sim').addEventListener('click', () => {
-    if (chartInstance) chartInstance.destroy();
-    modal.remove();
-    delete window.eliminarHito;
-  });
-
-  // Init
-  setTimeout(() => renderListas(), 100);
-  function esc(s) { return String(s || '').replace(/'/g, "\\'") }
-}};
+}
