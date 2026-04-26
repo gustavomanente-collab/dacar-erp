@@ -612,13 +612,14 @@ let ventaTotal = 0;
   const inputBusca = modal.querySelector('#sim-busca-ppto')
   const dropPpto = modal.querySelector('#sim-drop-ppto')
 
-  supabase
+const { data: pptos } = await supabase
     .from('cotizaciones')
     .select('id, numero, total_final, total_neto, clientes(nombre)')
     .order('numero', { ascending: false })
     .limit(100)
-    .then(({ data: pptos }) => {
-      inputBusca.addEventListener('input', e => {
+
+  inputBusca.addEventListener('input', e => {
+          inputBusca.addEventListener('input', e => {
         const txt = e.target.value.toLowerCase()
         if (!txt) { dropPpto.classList.add('hidden'); return }
         const filtrados = (pptos || []).filter(p =>
@@ -813,4 +814,5 @@ let cajaAcumulada = saldoInicial;
 
   // Init
   setTimeout(() => renderListas(), 100);
+  function esc(s) { return String(s || '').replace(/'/g, "\\'") }
 }};
