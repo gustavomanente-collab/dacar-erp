@@ -752,10 +752,21 @@ window.liquidarSeleccionados = async () => {
     }  
   }
 
-  async function cargarHistorialLiquidaciones() {
+async function cargarHistorialLiquidaciones() {
     const { data } = await supabase
       .from('liquidaciones')
-      .select('*, liquidacion_cobros(id)')
+      .select(`
+        *,
+        liquidacion_cobros(
+          id,
+          comision_usd,
+          cobros(
+            monto_usd,
+            clientes(nombre),
+            cotizaciones(numero)
+          )
+        )
+      `)
       .order('fecha', { ascending: false })
       .limit(20)
 
@@ -772,31 +783,72 @@ window.liquidarSeleccionados = async () => {
 
     el.innerHTML = `
       <h3 class="font-semibold text-gray-700 text-sm mb-3">Historial de liquidaciones</h3>
-      <table class="w-full text-xs">
-        <thead><tr class="bg-gray-900 text-white">
-          <th class="px-3 py-2 text-left">Fecha</th>
-          <th class="px-3 py-2 text-center">Cobros</th>
-          <th class="px-3 py-2 text-right">Monto U$S</th>
-          <th class="px-3 py-2 text-right">Monto $</th>
-          <th class="px-3 py-2 text-center">T/C</th>
-          <th class="px-3 py-2"></th>
-        </tr></thead>
-        <tbody>
-          ${data.map((l, i) => `
-            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-              <td class="px-3 py-2">${new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
-              <td class="px-3 py-2 text-center">${l.liquidacion_cobros?.length || 0}</td>
-              <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(l.monto_usd||0).toFixed(2)}</td>
-              <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(l.monto_ars||0).toLocaleString('es-AR')}</td>
-              <td class="px-3 py-2 text-center text-gray-500">${l.tc || '-'}</td>
-              <td class="px-3 py-2 text-center">
-                <button onclick="borrarLiquidacion('${l.id}')"
-                  class="text-red-400 hover:text-red-600 font-bold">✕</button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
+      <div class="space-y-3">
+        ${data.map((l, i) => {
+          const cobros = l.liquidacion_cobros || []
+          // Obtener pptos y clientes únicos
+          const pptos = [...new Set(cobros
+            .map(lc => lc.cobros?.cotizaciones?.numero)
+            .filter(Boolean)
+            .map(n => `2026-${String(n).padStart(3,'0')}`)
+          )].join(', ') || l.notas || '-'
+
+          const clientes = [...new Set(cobros
+            .map(lc => lc.cobros?.clientes?.nombre)
+            .filter(Boolean)
+          )].join(', ') || '-'
+
+          return `
+            <div class="border border-gray-200 rounded-lg overflow-hidden">
+              <div class="bg-gray-50 px-4 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                  <div>
+                    <p class="text-xs text-gray-400">Fecha</p>
+                    <p class="text-sm font-bold text-gray-800">${new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-400">Cliente(s)</p>
+                    <p class="text-sm font-medium text-gray-800">${clientes}</p>
+                  </div>
+                  <div>
+                    <p class="text-xs text-gray-400">Presupuesto(s)</p>
+                    <p class="text-sm font-medium text-gray-800">${pptos}</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-4">
+                  <div class="text-right">
+                    <p class="text-xs text-gray-400">Monto liquidado</p>
+                    <p class="text-sm font-black text-purple-700">U$S ${(l.monto_usd||0).toFixed(2)}</p>
+                    <p class="text-xs text-purple-500">$ ${Math.round(l.monto_ars||0).toLocaleString('es-AR')} (T/C ${l.tc})</p>
+                  </div>
+                  <button onclick="borrarLiquidacion('${l.id}')"
+                    class="text-red-400 hover:text-red-600 font-bold text-lg">✕</button>
+                </div>
+              </div>
+              ${cobros.length ? `
+              <table class="w-full text-xs">
+                <thead><tr class="bg-gray-100 text-gray-500">
+                  <th class="px-3 py-1 text-left">Cliente</th>
+                  <th class="px-3 py-1 text-left">Ppto</th>
+                  <th class="px-3 py-1 text-right">Cobrado</th>
+                  <th class="px-3 py-1 text-right">Comisión</th>
+                </tr></thead>
+                <tbody>
+                  ${cobros.map(lc => `
+                    <tr class="border-t border-gray-100">
+                      <td class="px-3 py-1">${lc.cobros?.clientes?.nombre || '-'}</td>
+                      <td class="px-3 py-1">${lc.cobros?.cotizaciones?.numero ? '2026-' + String(lc.cobros.cotizaciones.numero).padStart(3,'0') : '-'}</td>
+                      <td class="px-3 py-1 text-right text-green-700">U$S ${(lc.cobros?.monto_usd||0).toFixed(2)}</td>
+                      <td class="px-3 py-1 text-right text-purple-700">U$S ${(lc.comision_usd||0).toFixed(2)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              ` : `<p class="text-xs text-gray-400 px-4 py-2">${l.notas || ''}</p>`}
+            </div>
+          `
+        }).join('')}
+      </div>
     `
 
     window.borrarLiquidacion = async (id) => {
@@ -804,7 +856,6 @@ window.liquidarSeleccionados = async () => {
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
       if (!confirm('¿Confirmás? Esto va a desmarcar los cobros como liquidados.')) return
 
-      // Obtener cobros de esta liquidación
       const { data: lc } = await supabase
         .from('liquidacion_cobros')
         .select('cobro_id')
