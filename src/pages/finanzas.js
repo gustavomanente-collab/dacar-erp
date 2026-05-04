@@ -515,8 +515,6 @@ async function renderComisiones() {
 
     const cobrosConCot = (data || []).filter(c => c.cotizaciones)
 
-    // Comisión = 25% sobre utilidad NETA del cobro
-    // Utilidad neta = (total_final - total_neto) / total_final * monto_cobrado
     const comisionesCalc = cobrosConCot.map(c => {
       const totalFinal = c.cotizaciones.total_final || 0
       const totalNeto  = c.cotizaciones.total_neto || 0
@@ -527,42 +525,209 @@ async function renderComisiones() {
       return { ...c, utilidadDelCobro, comision }
     })
 
-    const totalComisiones = comisionesCalc.reduce((s, c) => s + c.comision, 0)
+    const pendientes  = comisionesCalc.filter(c => !c.liquidado)
+    const liquidadas  = comisionesCalc.filter(c => c.liquidado)
+    const totalPend   = pendientes.reduce((s, c) => s + c.comision, 0)
+    const totalLiquid = liquidadas.reduce((s, c) => s + c.comision, 0)
 
     el.innerHTML = `
-      <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4 flex justify-between">
-        <span class="text-sm font-medium text-purple-700">Total comisiones generadas:</span>
-        <span class="text-sm font-bold text-purple-800">U$S ${totalComisiones.toFixed(2)}</span>
+      <!-- Resumen -->
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+          <p class="text-xs text-purple-600 font-medium">Pendiente de liquidar</p>
+          <p class="text-xl font-black text-purple-700">U$S ${totalPend.toFixed(2)}</p>
+        </div>
+        <div class="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+          <p class="text-xs text-green-600 font-medium">Ya liquidado</p>
+          <p class="text-xl font-black text-green-700">U$S ${totalLiquid.toFixed(2)}</p>
+        </div>
       </div>
-      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        <table class="w-full text-xs">
-          <thead><tr class="bg-gray-900 text-white">
-            <th class="px-3 py-2 text-left">Fecha</th>
-            <th class="px-3 py-2 text-left">Cliente</th>
-            <th class="px-3 py-2 text-left">Ppto</th>
-            <th class="px-3 py-2 text-right">Cobrado U$S</th>
-            <th class="px-3 py-2 text-right">Utilidad del cobro</th>
-            <th class="px-3 py-2 text-right">Comisión 25%</th>
-            <th class="px-3 py-2 text-right">Comisión $</th>
-          </tr></thead>
-          <tbody>
-            ${comisionesCalc.map((c, i) => `
-              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-                <td class="px-3 py-2">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
-                <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
-                <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
-                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-gray-600">U$S ${c.utilidadDelCobro.toFixed(2)}</td>
-                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+
+      <!-- Botón liquidar -->
+      <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-gray-700 text-sm">Comisiones pendientes</h3>
+          <div class="flex gap-2 items-center">
+            <span id="sel-count" class="text-xs text-gray-500">0 seleccionados</span>
+            <button onclick="liquidarSeleccionados()"
+              class="bg-purple-700 hover:bg-purple-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+              💸 Liquidar seleccionados
+            </button>
+          </div>
+        </div>
+
+        ${pendientes.length ? `
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-2 py-2 text-center w-8">
+                <input type="checkbox" id="check-all" onchange="toggleTodos(this.checked)" />
+              </th>
+              <th class="px-3 py-2 text-left">Fecha</th>
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-left">Ppto</th>
+              <th class="px-3 py-2 text-right">Cobrado U$S</th>
+              <th class="px-3 py-2 text-right">Utilidad</th>
+              <th class="px-3 py-2 text-right">Comisión 25%</th>
+              <th class="px-3 py-2 text-right">Comisión $</th>
+            </tr></thead>
+            <tbody>
+              ${pendientes.map((c, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}" id="row-${c.id}">
+                  <td class="px-2 py-2 text-center">
+                    <input type="checkbox" class="check-cobro" data-id="${c.id}"
+                      data-comision="${c.comision.toFixed(2)}"
+                      onchange="actualizarSeleccion()" />
+                  </td>
+                  <td class="px-3 py-2">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                  <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
+                  <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
+                  <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-gray-600">U$S ${c.utilidadDelCobro.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        ` : '<p class="text-gray-400 text-sm text-center py-4">No hay comisiones pendientes.</p>'}
+      </div>
+
+      <!-- Historial liquidaciones -->
+      <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm" id="hist-liquid">
+        <h3 class="font-semibold text-gray-700 text-sm mb-3">Historial de liquidaciones</h3>
+        <p class="text-gray-400 text-xs">Cargando...</p>
       </div>
     `
+
+    // Cargar historial
+    cargarHistorialLiquidaciones()
+
+    window.toggleTodos = (checked) => {
+      document.querySelectorAll('.check-cobro').forEach(c => c.checked = checked)
+      actualizarSeleccion()
+    }
+
+    window.actualizarSeleccion = () => {
+      const checks = [...document.querySelectorAll('.check-cobro:checked')]
+      const total = checks.reduce((s, c) => s + parseFloat(c.dataset.comision), 0)
+      document.getElementById('sel-count').textContent =
+        `${checks.length} seleccionados — U$S ${total.toFixed(2)}`
+    }
+
+    window.liquidarSeleccionados = async () => {
+      const checks = [...document.querySelectorAll('.check-cobro:checked')]
+      if (!checks.length) { alert('Seleccioná al menos un cobro'); return }
+
+      const total = checks.reduce((s, c) => s + parseFloat(c.dataset.comision), 0)
+      const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
+
+      if (!confirm(`¿Confirmás liquidar U$S ${total.toFixed(2)} ($ ${Math.round(total * tc).toLocaleString('es-AR')})?`)) return
+
+      // Crear liquidación
+      const { data: liq, error } = await supabase
+        .from('liquidaciones')
+        .insert({
+          fecha: new Date().toISOString().split('T')[0],
+          monto_usd: total,
+          monto_ars: total * tc,
+          tc,
+          notas: `Liquidación de ${checks.length} cobro(s)`
+        })
+        .select().single()
+
+      if (error) { alert('Error: ' + error.message); return }
+
+      // Marcar cobros como liquidados
+      const cobrosIds = checks.map(c => c.dataset.id)
+
+      await supabase.from('liquidacion_cobros').insert(
+        checks.map(c => ({
+          liquidacion_id: liq.id,
+          cobro_id: c.dataset.id,
+          comision_usd: parseFloat(c.dataset.comision)
+        }))
+      )
+
+      await supabase.from('cobros')
+        .update({ liquidado: true, liquidacion_id: liq.id })
+        .in('id', cobrosIds)
+
+      alert(`✅ Liquidación registrada por U$S ${total.toFixed(2)}`)
+      renderComisiones()
+    }
   }
-  renderPendientes()
+
+  async function cargarHistorialLiquidaciones() {
+    const { data } = await supabase
+      .from('liquidaciones')
+      .select('*, liquidacion_cobros(id)')
+      .order('fecha', { ascending: false })
+      .limit(20)
+
+    const el = document.getElementById('hist-liquid')
+    if (!el) return
+
+    if (!data?.length) {
+      el.innerHTML = `
+        <h3 class="font-semibold text-gray-700 text-sm mb-3">Historial de liquidaciones</h3>
+        <p class="text-gray-400 text-xs text-center py-4">No hay liquidaciones registradas.</p>
+      `
+      return
+    }
+
+    el.innerHTML = `
+      <h3 class="font-semibold text-gray-700 text-sm mb-3">Historial de liquidaciones</h3>
+      <table class="w-full text-xs">
+        <thead><tr class="bg-gray-900 text-white">
+          <th class="px-3 py-2 text-left">Fecha</th>
+          <th class="px-3 py-2 text-center">Cobros</th>
+          <th class="px-3 py-2 text-right">Monto U$S</th>
+          <th class="px-3 py-2 text-right">Monto $</th>
+          <th class="px-3 py-2 text-center">T/C</th>
+          <th class="px-3 py-2"></th>
+        </tr></thead>
+        <tbody>
+          ${data.map((l, i) => `
+            <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+              <td class="px-3 py-2">${new Date(l.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+              <td class="px-3 py-2 text-center">${l.liquidacion_cobros?.length || 0}</td>
+              <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(l.monto_usd||0).toFixed(2)}</td>
+              <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(l.monto_ars||0).toLocaleString('es-AR')}</td>
+              <td class="px-3 py-2 text-center text-gray-500">${l.tc || '-'}</td>
+              <td class="px-3 py-2 text-center">
+                <button onclick="borrarLiquidacion('${l.id}')"
+                  class="text-red-400 hover:text-red-600 font-bold">✕</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `
+
+    window.borrarLiquidacion = async (id) => {
+      const clave = prompt('Clave de gerencia:')
+      if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
+      if (!confirm('¿Confirmás? Esto va a desmarcar los cobros como liquidados.')) return
+
+      // Obtener cobros de esta liquidación
+      const { data: lc } = await supabase
+        .from('liquidacion_cobros')
+        .select('cobro_id')
+        .eq('liquidacion_id', id)
+
+      const ids = (lc || []).map(x => x.cobro_id)
+      if (ids.length) {
+        await supabase.from('cobros')
+          .update({ liquidado: false, liquidacion_id: null })
+          .in('id', ids)
+      }
+
+      await supabase.from('liquidaciones').delete().eq('id', id)
+      renderComisiones()
+    }
+  }  renderPendientes()
 
   window.abrirSimuladorFlujo = () => {
     let ventaTotal = 0;
