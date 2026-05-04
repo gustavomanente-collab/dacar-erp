@@ -1,5 +1,5 @@
 import { supabase } from '../supabase.js'
-
+import { generarReciboCobro, generarReciboComision } from '../recibos.js'
 export async function renderFinanzas(contenedor, perfil) {
   // Roles definidos por Gustavo
   const esGerencia = perfil?.role === 'gerencia'
@@ -402,14 +402,42 @@ window.liquidarVentaCompleta = async (cotId, totalFinal, totalNeto) => {
                 <td class="px-3 py-2 text-right text-blue-700">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                 <td class="px-3 py-2 text-center text-gray-500">${c.tc || '-'}</td>
                 <td class="px-3 py-2 text-center">
-                  ${esGerencia || esAdmin ? `<button onclick="borrarCobro('${c.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>` : ''}
-                </td>
+<button onclick="imprimirReciboCobro('${c.id}')" class="text-blue-500 hover:text-blue-700 text-xs mr-1">🖨️</button>
+                <button onclick="borrarCobro('${c.id}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>                </td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       </div>
     `
+window.imprimirReciboCobro = async (id) => {
+      const cobro = data.find(c => c.id === id)
+      if (!cobro) return
+
+      // Calcular saldo pendiente
+      const { data: todosLosCobros } = await supabase
+        .from('cobros')
+        .select('monto_usd')
+        .eq('cotizacion_id', cobro.cotizacion_id)
+
+      const totalCobrado = (todosLosCobros || []).reduce((s, c) => s + (c.monto_usd || 0), 0)
+
+      const { data: cot } = await supabase
+        .from('cotizaciones')
+        .select('numero, total_bruto_usd, total_final')
+        .eq('id', cobro.cotizacion_id)
+        .single()
+
+      const totalVenta = cot?.total_bruto_usd || cot?.total_final || 0
+      const saldo = totalVenta - totalCobrado
+
+      await generarReciboCobro({
+        ...cobro,
+        cliente_nombre: cobro.clientes?.nombre,
+        nro_ppto: cot?.numero,
+        saldo_usd: saldo
+      })
+    }
 
     window.borrarCobro = async (id) => {
       const clave = prompt('Clave de gerencia:')
@@ -822,8 +850,9 @@ async function cargarHistorialLiquidaciones() {
                     <p class="text-xs text-purple-500">$ ${Math.round(l.monto_ars||0).toLocaleString('es-AR')} (T/C ${l.tc})</p>
                   </div>
                   <button onclick="borrarLiquidacion('${l.id}')"
-                    class="text-red-400 hover:text-red-600 font-bold text-lg">✕</button>
-                </div>
+class="text-red-400 hover:text-red-600 font-bold text-lg">✕</button>
+                <button onclick="imprimirReciboComision('${l.id}')"
+                  class="text-blue-500 hover:text-blue-700 font-bold text-lg ml-2">🖨️</button>                </div>
               </div>
               ${cobros.length ? `
               <table class="w-full text-xs">
@@ -850,7 +879,21 @@ async function cargarHistorialLiquidaciones() {
         }).join('')}
       </div>
     `
+window.imprimirReciboComision = async (id) => {
+      const liq = data.find(l => l.id === id)
+      if (!liq) return
 
+      const cobros = liq.liquidacion_cobros || []
+      const clientes = [...new Set(cobros.map(lc => lc.cobros?.clientes?.nombre).filter(Boolean))].join(', ')
+      const pptos = [...new Set(cobros.map(lc => lc.cobros?.cotizaciones?.numero).filter(Boolean))].join(', ')
+
+      await generarReciboComision({
+        ...liq,
+        vendedor_nombre: 'Vendedor DACAR',
+        notas: `Ventas: ${pptos} | Clientes: ${clientes}`
+      })
+    }
+    
     window.borrarLiquidacion = async (id) => {
       const clave = prompt('Clave de gerencia:')
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
