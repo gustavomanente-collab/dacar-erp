@@ -514,7 +514,7 @@ export async function renderFinanzas(contenedor, perfil) {
       .order('fecha', { ascending: false })
 
     const cobrosConCot = (data || []).filter(c => c.cotizaciones)
-    const totalComisiones = cobrosConCot.reduce((s, c) => s + c.monto_usd * 0.20, 0)
+    const totalComisiones = cobrosConCot.reduce((s, c) => s + c.monto_usd * 0.25, 0)
 
     el.innerHTML = `
       <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4 flex justify-between">
@@ -528,7 +528,7 @@ export async function renderFinanzas(contenedor, perfil) {
             <th class="px-3 py-2 text-left">Cliente</th>
             <th class="px-3 py-2 text-left">Ppto</th>
             <th class="px-3 py-2 text-right">Cobrado U$S</th>
-            <th class="px-3 py-2 text-right">Comisión 20%</th>
+            <th class="px-3 py-2 text-right">Comisión 25%</th>
             <th class="px-3 py-2 text-right">Comisión $</th>
           </tr></thead>
           <tbody>
@@ -538,8 +538,8 @@ export async function renderFinanzas(contenedor, perfil) {
                 <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
                 <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
                 <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(c.monto_usd*0.20).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.monto_usd*0.20*(c.tc||1150)).toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(c.monto_usd*5).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.monto_usd*0.25*(c.tc||1150)).toLocaleString('es-AR')}</td>
               </tr>
             `).join('')}
           </tbody>
