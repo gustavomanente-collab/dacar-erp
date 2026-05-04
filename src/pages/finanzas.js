@@ -105,6 +105,20 @@ export async function renderFinanzas(contenedor, perfil) {
                     <p class="text-xs text-gray-500">${cot.clientes?.obra || ''}</p>
                   </div>
                 </div>
+                <!-- Liquidar comisión completa -->
+          <div class="border-t pt-3 mb-3">
+            <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between">
+              <div>
+                <p class="text-xs font-semibold text-purple-700">Comisión total de esta venta</p>
+                <p class="text-sm font-black text-purple-800">U$S ${((cot.total_final - cot.total_neto) * 0.25).toFixed(2)}</p>
+                <p class="text-xs text-purple-500">25% sobre utilidad neta de U$S ${(cot.total_final - cot.total_neto).toFixed(2)}</p>
+              </div>
+              <button onclick="liquidarVentaCompleta('${cot.id}', ${cot.total_final}, ${cot.total_neto})"
+                class="bg-purple-700 hover:bg-purple-900 text-white text-xs font-medium px-3 py-2 rounded-lg">
+                💸 Liquidar 100%
+              </button>
+            </div>
+          </div>
                 <div class="text-right">
                   <p class="text-xs text-gray-400">${estado}</p>
                   <p class="font-bold text-green-700 text-sm">U$S ${bruto.toFixed(2)}</p>
@@ -300,7 +314,30 @@ export async function renderFinanzas(contenedor, perfil) {
         modal.remove()
         renderPendientes()
       }
+window.liquidarVentaCompleta = async (cotId, totalFinal, totalNeto) => {
+        const utilidad = totalFinal - totalNeto
+        const comision = utilidad * 0.25
+        const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
 
+        if (!confirm(`¿Liquidar comisión completa de U$S ${comision.toFixed(2)} ($ ${Math.round(comision * tc).toLocaleString('es-AR')}) sobre utilidad de U$S ${utilidad.toFixed(2)}?`)) return
+
+        const { data: liq, error } = await supabase
+          .from('liquidaciones')
+          .insert({
+            fecha: new Date().toISOString().split('T')[0],
+            monto_usd: comision,
+            monto_ars: comision * tc,
+            tc,
+            notas: `Liquidación 100% venta 2026-${String(cot.numero).padStart(3,'0')}`
+          })
+          .select().single()
+
+        if (error) { alert('Error: ' + error.message); return }
+
+        alert(`✅ Comisión de U$S ${comision.toFixed(2)} liquidada correctamente`)
+        modal.remove()
+        renderPendientes()
+      }
       window.borrarCobroFicha = async (id, cotId) => {
         const clave = prompt('Clave de gerencia:')
         if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
@@ -570,6 +607,7 @@ async function renderComisiones() {
               <th class="px-3 py-2 text-right">Utilidad</th>
               <th class="px-3 py-2 text-right">Comisión 25%</th>
               <th class="px-3 py-2 text-right">Comisión $</th>
+              <th class="px-3 py-2 text-center">Acción</th>
             </tr></thead>
             <tbody>
               ${pendientes.map((c, i) => `
@@ -585,9 +623,14 @@ async function renderComisiones() {
                   <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right text-gray-600">U$S ${c.utilidadDelCobro.toFixed(2)}</td>
                   <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
-                  <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
-                </tr>
-              `).join('')}
+<td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
+                  <td class="px-3 py-2 text-center">
+                    <button onclick="liquidarVentaDesdeComisiones('${c.cotizacion_id}', ${c.cotizaciones?.total_final || 0}, ${c.cotizaciones?.total_neto || 0}, '${c.cotizaciones?.numero || 0}')"
+                      class="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded font-medium">
+                      💸 100%
+                    </button>
+                  </td>
+                </tr>              `).join('')}
             </tbody>
           </table>
         </div>
@@ -656,6 +699,50 @@ async function renderComisiones() {
 
       alert(`✅ Liquidación registrada por U$S ${total.toFixed(2)}`)
       renderComisiones()
+      window.liquidarVentaDesdeComisiones = async (cotId, totalFinal, totalNeto, numero) => {
+      const utilidad = totalFinal - totalNeto
+      const comision = utilidad * 0.25
+      const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
+
+      if (!confirm(`¿Liquidar comisión completa de la venta 2026-${String(numero).padStart(3,'0')}?\nMonto: U$S ${comision.toFixed(2)} ($ ${Math.round(comision * tc).toLocaleString('es-AR')})`)) return
+
+      const { data: liq, error } = await supabase
+        .from('liquidaciones')
+        .insert({
+          fecha: new Date().toISOString().split('T')[0],
+          monto_usd: comision,
+          monto_ars: comision * tc,
+          tc,
+          notas: `Liquidación 100% venta 2026-${String(numero).padStart(3,'0')}`
+        })
+        .select().single()
+
+      if (error) { alert('Error: ' + error.message); return }
+
+      // Marcar todos los cobros de esa cotización como liquidados
+      const { data: cobrosVenta } = await supabase
+        .from('cobros')
+        .select('id')
+        .eq('cotizacion_id', cotId)
+        .eq('liquidado', false)
+
+      if (cobrosVenta?.length) {
+        const ids = cobrosVenta.map(c => c.id)
+        await supabase.from('liquidacion_cobros').insert(
+          ids.map(id => ({
+            liquidacion_id: liq.id,
+            cobro_id: id,
+            comision_usd: comision / ids.length
+          }))
+        )
+        await supabase.from('cobros')
+          .update({ liquidado: true, liquidacion_id: liq.id })
+          .in('id', ids)
+      }
+
+      alert(`✅ Comisión de U$S ${comision.toFixed(2)} liquidada`)
+      renderComisiones()
+    }
     }
   }
 
