@@ -504,7 +504,7 @@ export async function renderFinanzas(contenedor, perfil) {
     }
   }
 
-  async function renderComisiones() {
+async function renderComisiones() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
 
@@ -514,7 +514,20 @@ export async function renderFinanzas(contenedor, perfil) {
       .order('fecha', { ascending: false })
 
     const cobrosConCot = (data || []).filter(c => c.cotizaciones)
-    const totalComisiones = cobrosConCot.reduce((s, c) => s + c.monto_usd * 0.25, 0)
+
+    // Comisión = 25% sobre utilidad NETA del cobro
+    // Utilidad neta = (total_final - total_neto) / total_final * monto_cobrado
+    const comisionesCalc = cobrosConCot.map(c => {
+      const totalFinal = c.cotizaciones.total_final || 0
+      const totalNeto  = c.cotizaciones.total_neto || 0
+      const utilidad   = totalFinal - totalNeto
+      const pctUtil    = totalFinal > 0 ? utilidad / totalFinal : 0
+      const utilidadDelCobro = c.monto_usd * pctUtil
+      const comision   = utilidadDelCobro * 0.25
+      return { ...c, utilidadDelCobro, comision }
+    })
+
+    const totalComisiones = comisionesCalc.reduce((s, c) => s + c.comision, 0)
 
     el.innerHTML = `
       <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 mb-4 flex justify-between">
@@ -528,18 +541,20 @@ export async function renderFinanzas(contenedor, perfil) {
             <th class="px-3 py-2 text-left">Cliente</th>
             <th class="px-3 py-2 text-left">Ppto</th>
             <th class="px-3 py-2 text-right">Cobrado U$S</th>
+            <th class="px-3 py-2 text-right">Utilidad del cobro</th>
             <th class="px-3 py-2 text-right">Comisión 25%</th>
             <th class="px-3 py-2 text-right">Comisión $</th>
           </tr></thead>
           <tbody>
-            ${cobrosConCot.map((c, i) => `
+            ${comisionesCalc.map((c, i) => `
               <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
                 <td class="px-3 py-2">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
                 <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
                 <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
                 <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${(c.monto_usd*5).toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.monto_usd*0.25*(c.tc||1150)).toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right text-gray-600">U$S ${c.utilidadDelCobro.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -547,7 +562,6 @@ export async function renderFinanzas(contenedor, perfil) {
       </div>
     `
   }
-
   renderPendientes()
 
   window.abrirSimuladorFlujo = () => {
