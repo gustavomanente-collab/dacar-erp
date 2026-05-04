@@ -2,23 +2,28 @@ import { supabase } from '../supabase.js'
 
 export async function renderClientes(contenedor) {
   contenedor.innerHTML = `
-    <div class="p-6 max-w-5xl mx-auto">
-      <div class="flex items-center justify-between mb-6">
-        <h2 class="text-xl font-bold text-gray-900">Clientes</h2>
-        <button id="btn-nuevo-cliente"
-          class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-          + Nuevo cliente
-        </button>
+    <div class="p-4 max-w-5xl mx-auto">
+
+      <!-- Buscador principal -->
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold text-gray-900">Clientes</h2>
+          <button id="btn-nuevo-cliente"
+            class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            + Nuevo cliente
+          </button>
+        </div>
+        <div class="relative">
+          <input id="busca-cli" type="text" placeholder="🔍 Buscar cliente por nombre, código o teléfono..."
+            class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+          <div id="drop-cli" class="hidden" style="position:fixed;background:white;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);max-height:250px;overflow-y:auto;z-index:9999;"></div>
+        </div>
+        <p class="text-xs text-gray-400 mt-2">Buscá un cliente para ver su ficha completa</p>
       </div>
 
-      <div class="mb-4">
-        <input id="buscador" type="text" placeholder="Buscar por nombre, teléfono u obra..."
-          class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
-      </div>
+      <!-- Ficha del cliente (se muestra al seleccionar) -->
+      <div id="ficha-cliente" class="hidden"></div>
 
-      <div id="lista-clientes" class="space-y-3">
-        <p class="text-gray-400 text-sm">Cargando clientes...</p>
-      </div>
     </div>
 
     <!-- Modal nuevo/editar cliente -->
@@ -28,38 +33,31 @@ export async function renderClientes(contenedor) {
         <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
-            <input id="campo-nombre" type="text"
-              class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+            <input id="campo-nombre" type="text" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
-            <input id="campo-telefono" type="text"
-              class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+            <input id="campo-telefono" type="text" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
-            <input id="campo-direccion" type="text"
-              class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+            <input id="campo-direccion" type="text" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Obra</label>
-            <input id="campo-obra" type="text"
-              class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+            <input id="campo-obra" type="text" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-            <textarea id="campo-notas" rows="2"
-              class="w-full rounded-lg border-gray-300 shadow-sm text-sm"></textarea>
+            <textarea id="campo-notas" rows="2" class="w-full rounded-lg border-gray-300 shadow-sm text-sm"></textarea>
           </div>
         </div>
         <p id="error-cliente" class="text-red-500 text-sm mt-3 hidden"></p>
         <div class="flex gap-3 mt-6">
-          <button id="btn-cancelar"
-            class="flex-1 border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-lg hover:bg-gray-50 transition-colors">
+          <button id="btn-cancelar" class="flex-1 border border-gray-300 text-gray-700 text-sm font-medium py-2 rounded-lg hover:bg-gray-50">
             Cancelar
           </button>
-          <button id="btn-guardar"
-            class="flex-1 bg-green-700 hover:bg-green-900 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+          <button id="btn-guardar" class="flex-1 bg-green-700 hover:bg-green-900 text-white text-sm font-medium py-2 rounded-lg">
             Guardar
           </button>
         </div>
@@ -68,83 +66,271 @@ export async function renderClientes(contenedor) {
   `
 
   let clienteEditandoId = null
-  let todosLosClientes = []
+  let clienteActual = null
 
-  async function cargarClientes() {
-    const { data, error } = await supabase
-      .from('clientes')
-      .select('*')
-      .order('created_at', { ascending: false })
+  // Cargar todos los clientes para el buscador
+  const { data: clientes } = await supabase
+    .from('clientes')
+    .select('*')
+    .order('nombre')
 
-    if (error) {
-      document.getElementById('lista-clientes').innerHTML =
-        '<p class="text-red-500 text-sm">Error al cargar clientes.</p>'
-      return
-    }
+  // Buscador
+  const buscaCli = document.getElementById('busca-cli')
+  const dropCli  = document.getElementById('drop-cli')
 
-    todosLosClientes = data
-    mostrarClientes(data)
-  }
+  buscaCli.addEventListener('focus', () => mostrarDrop(buscaCli.value))
+  buscaCli.addEventListener('input', e => mostrarDrop(e.target.value))
 
-  function mostrarClientes(lista) {
-    const contenedorLista = document.getElementById('lista-clientes')
-    if (lista.length === 0) {
-      contenedorLista.innerHTML = '<p class="text-gray-400 text-sm">No hay clientes todavía.</p>'
-      return
-    }
-    contenedorLista.innerHTML = lista.map(c => `
-      <div class="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-        <div>
-<p class="font-medium text-gray-900">${c.nombre} <span class="text-xs text-gray-400 ml-1">${c.codigo || ''}</span></p>          <p class="text-sm text-gray-500">${c.telefono || ''} ${c.obra ? '· Obra: ' + c.obra : ''}</p>
-          <p class="text-sm text-gray-400">${c.direccion || ''}</p>
+  function mostrarDrop(txt) {
+    const filtrados = (clientes || [])
+      .filter(c => !txt ||
+        c.nombre?.toLowerCase().includes(txt.toLowerCase()) ||
+        c.codigo?.toLowerCase().includes(txt.toLowerCase()) ||
+        c.telefono?.includes(txt)
+      ).slice(0, 10)
+
+    if (!filtrados.length) { dropCli.classList.add('hidden'); return }
+
+    const rect = buscaCli.getBoundingClientRect()
+    dropCli.style.top   = (rect.bottom + window.scrollY) + 'px'
+    dropCli.style.left  = rect.left + 'px'
+    dropCli.style.width = rect.width + 'px'
+
+    dropCli.innerHTML = filtrados.map(c => `
+      <div onclick="seleccionarCliente('${c.id}')"
+        style="padding:10px 14px;font-size:14px;cursor:pointer;border-bottom:1px solid #f3f4f6;"
+        onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='white'">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-weight:600">${c.nombre}</span>
+          <span style="color:#9ca3af;font-size:11px">${c.codigo || ''}</span>
         </div>
-        <button onclick="editarCliente('${c.id}')"
-          class="text-sm text-green-700 hover:underline font-medium">
-          Editar
-        </button>
+        ${c.obra ? `<div style="color:#6b7280;font-size:12px">${c.obra}</div>` : ''}
+        ${c.telefono ? `<div style="color:#9ca3af;font-size:11px">${c.telefono}</div>` : ''}
       </div>
     `).join('')
+    dropCli.classList.remove('hidden')
   }
 
-  function abrirModal(cliente = null) {
-    clienteEditandoId = cliente ? cliente.id : null
-    document.getElementById('modal-titulo').textContent = cliente ? 'Editar cliente' : 'Nuevo cliente'
-    document.getElementById('campo-nombre').value = cliente?.nombre || ''
-    document.getElementById('campo-telefono').value = cliente?.telefono || ''
-    document.getElementById('campo-direccion').value = cliente?.direccion || ''
-    document.getElementById('campo-obra').value = cliente?.obra || ''
-    document.getElementById('campo-notas').value = cliente?.notas || ''
+  document.addEventListener('click', e => {
+    if (!buscaCli.contains(e.target) && !dropCli.contains(e.target)) {
+      dropCli.classList.add('hidden')
+    }
+  })
+
+  window.seleccionarCliente = async (id) => {
+    dropCli.classList.add('hidden')
+    buscaCli.value = ''
+    await cargarFichaCliente(id)
+  }
+
+  async function cargarFichaCliente(id) {
+    const ficha = document.getElementById('ficha-cliente')
+    ficha.innerHTML = '<p class="text-gray-400 text-sm text-center py-8">Cargando...</p>'
+    ficha.classList.remove('hidden')
+
+    // Cargar cliente
+    const { data: cli } = await supabase
+      .from('clientes').select('*').eq('id', id).single()
+
+    // Cargar cotizaciones
+    const { data: cots } = await supabase
+      .from('cotizaciones')
+      .select('id, numero, estado, total_final, total_bruto_usd, created_at')
+      .eq('cliente_id', id)
+      .order('numero', { ascending: false })
+
+    // Cargar cobros
+    const { data: cobros } = await supabase
+      .from('cobros')
+      .select('*')
+      .eq('cliente_id', id)
+      .order('fecha', { ascending: false })
+
+    clienteActual = cli
+
+    const totalVentas   = (cots || []).filter(c => c.estado === 'aprobada')
+      .reduce((s, c) => s + (c.total_bruto_usd || c.total_final || 0), 0)
+    const totalCobrado  = (cobros || []).reduce((s, c) => s + (c.monto_usd || 0), 0)
+    const totalCobradoArs = (cobros || []).reduce((s, c) => s + (c.monto_ars || 0), 0)
+    const saldo         = totalVentas - totalCobrado
+
+    const estadoColor = {
+      borrador:  'bg-gray-100 text-gray-600',
+      enviada:   'bg-blue-100 text-blue-700',
+      aprobada:  'bg-green-100 text-green-700',
+      rechazada: 'bg-red-100 text-red-600'
+    }
+
+    ficha.innerHTML = `
+      <!-- Encabezado cliente -->
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <h3 class="text-xl font-black text-gray-900">${cli.nombre}</h3>
+              <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">${cli.codigo || ''}</span>
+            </div>
+            <div class="text-sm text-gray-500 space-y-0.5">
+              ${cli.telefono ? `<p>📞 ${cli.telefono}</p>` : ''}
+              ${cli.direccion ? `<p>📍 ${cli.direccion}</p>` : ''}
+              ${cli.obra ? `<p>🏗️ ${cli.obra}</p>` : ''}
+              ${cli.notas ? `<p>📝 ${cli.notas}</p>` : ''}
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="editarCliente('${cli.id}')"
+              class="text-sm text-green-700 border border-green-300 hover:bg-green-50 px-3 py-1.5 rounded-lg">
+              ✏️ Editar
+            </button>
+            <button onclick="exportarClienteSheets('${cli.id}')"
+              class="text-sm text-blue-700 border border-blue-300 hover:bg-blue-50 px-3 py-1.5 rounded-lg">
+              📊 Exportar
+            </button>
+            <button onclick="imprimirEstadoCuenta('${cli.id}')"
+              class="text-sm text-gray-700 border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg">
+              🖨️ Imprimir
+            </button>
+            <button onclick="document.getElementById('ficha-cliente').classList.add('hidden')"
+              class="text-sm text-gray-400 hover:text-gray-600 px-2 py-1.5">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen cuenta corriente -->
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-green-600 font-medium mb-1">Total ventas aprobadas</p>
+          <p class="text-lg font-black text-green-700">U$S ${totalVentas.toFixed(2)}</p>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-blue-600 font-medium mb-1">Total cobrado</p>
+          <p class="text-lg font-black text-blue-700">U$S ${totalCobrado.toFixed(2)}</p>
+          <p class="text-xs text-blue-400">$ ${Math.round(totalCobradoArs).toLocaleString('es-AR')}</p>
+        </div>
+        <div class="bg-${saldo > 0 ? 'red' : 'gray'}-50 border border-${saldo > 0 ? 'red' : 'gray'}-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-${saldo > 0 ? 'red' : 'gray'}-600 font-medium mb-1">Saldo pendiente</p>
+          <p class="text-lg font-black text-${saldo > 0 ? 'red' : 'gray'}-700">U$S ${saldo.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <!-- Presupuestos -->
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+          <h4 class="font-semibold text-gray-700 text-sm">Presupuestos (${(cots||[]).length})</h4>
+        </div>
+        ${(cots||[]).length ? `
+        <table class="w-full text-sm">
+          <thead><tr class="text-xs text-gray-500 border-b">
+            <th class="px-4 py-2 text-left">N°</th>
+            <th class="px-4 py-2 text-left">Fecha</th>
+            <th class="px-4 py-2 text-left">Estado</th>
+            <th class="px-4 py-2 text-right">Total U$S</th>
+          </tr></thead>
+          <tbody>
+            ${(cots||[]).map((c, i) => `
+              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-green-50 cursor-pointer"
+                onclick="navigate('historial')">
+                <td class="px-4 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
+                <td class="px-4 py-2 text-gray-500 text-xs">${new Date(c.created_at).toLocaleDateString('es-AR')}</td>
+                <td class="px-4 py-2">
+                  <span class="px-2 py-0.5 rounded-full text-xs font-medium ${estadoColor[c.estado] || 'bg-gray-100 text-gray-600'}">
+                    ${c.estado}
+                  </span>
+                </td>
+                <td class="px-4 py-2 text-right font-semibold text-green-700">
+                  U$S ${(c.total_bruto_usd || c.total_final || 0).toFixed(2)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        ` : '<p class="text-gray-400 text-sm text-center py-6">Sin presupuestos.</p>'}
+      </div>
+
+      <!-- Cobros -->
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+          <h4 class="font-semibold text-gray-700 text-sm">Movimientos de cuenta corriente (${(cobros||[]).length})</h4>
+        </div>
+        ${(cobros||[]).length ? `
+        <table class="w-full text-sm">
+          <thead><tr class="text-xs text-gray-500 border-b">
+            <th class="px-4 py-2 text-left">Fecha</th>
+            <th class="px-4 py-2 text-left">Concepto</th>
+            <th class="px-4 py-2 text-left">Forma</th>
+            <th class="px-4 py-2 text-right">U$S</th>
+            <th class="px-4 py-2 text-right">$</th>
+            <th class="px-4 py-2 text-center">T/C</th>
+          </tr></thead>
+          <tbody>
+            ${(cobros||[]).map((c, i) => `
+              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                <td class="px-4 py-2 text-xs">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                <td class="px-4 py-2 text-xs">${c.concepto || ''}</td>
+                <td class="px-4 py-2 text-xs">${c.tipo_pago}</td>
+                <td class="px-4 py-2 text-right text-xs font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                <td class="px-4 py-2 text-right text-xs text-blue-600">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
+                <td class="px-4 py-2 text-center text-xs text-gray-400">${c.tc || '-'}</td>
+              </tr>
+            `).join('')}
+            <!-- Fila total -->
+            <tr class="bg-gray-900 text-white">
+              <td colspan="3" class="px-4 py-2 text-xs font-bold">TOTAL COBRADO</td>
+              <td class="px-4 py-2 text-right text-xs font-bold">U$S ${totalCobrado.toFixed(2)}</td>
+              <td class="px-4 py-2 text-right text-xs font-bold">$ ${Math.round(totalCobradoArs).toLocaleString('es-AR')}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        ` : '<p class="text-gray-400 text-sm text-center py-6">Sin movimientos.</p>'}
+      </div>
+    `
+
+    // Función editar cliente
+    window.editarCliente = (id) => {
+      const c = clientes.find(x => x.id === id)
+      if (!c) return
+      clienteEditandoId = id
+      document.getElementById('modal-titulo').textContent = 'Editar cliente'
+      document.getElementById('campo-nombre').value    = c.nombre || ''
+      document.getElementById('campo-telefono').value  = c.telefono || ''
+      document.getElementById('campo-direccion').value = c.direccion || ''
+      document.getElementById('campo-obra').value      = c.obra || ''
+      document.getElementById('campo-notas').value     = c.notas || ''
+      document.getElementById('modal-cliente').classList.remove('hidden')
+    }
+
+    // Exportar a Sheets
+    window.exportarClienteSheets = async (id) => {
+      alert('Función de exportar a Sheets en desarrollo.')
+    }
+
+    // Imprimir estado de cuenta
+    window.imprimirEstadoCuenta = async (id) => {
+      window.print()
+    }
+  }
+
+  // Modal nuevo cliente
+  document.getElementById('btn-nuevo-cliente').addEventListener('click', () => {
+    clienteEditandoId = null
+    document.getElementById('modal-titulo').textContent = 'Nuevo cliente'
+    document.getElementById('campo-nombre').value    = ''
+    document.getElementById('campo-telefono').value  = ''
+    document.getElementById('campo-direccion').value = ''
+    document.getElementById('campo-obra').value      = ''
+    document.getElementById('campo-notas').value     = ''
     document.getElementById('error-cliente').classList.add('hidden')
     document.getElementById('modal-cliente').classList.remove('hidden')
-  }
+  })
 
-  function cerrarModal() {
+  document.getElementById('btn-cancelar').addEventListener('click', () => {
     document.getElementById('modal-cliente').classList.add('hidden')
-    clienteEditandoId = null
-  }
-
-  window.editarCliente = (id) => {
-    const cliente = todosLosClientes.find(c => c.id === id)
-    if (cliente) abrirModal(cliente)
-  }
-
-  document.getElementById('btn-nuevo-cliente').addEventListener('click', () => abrirModal())
-  document.getElementById('btn-cancelar').addEventListener('click', cerrarModal)
-
-  document.getElementById('buscador').addEventListener('input', (e) => {
-    const texto = e.target.value.toLowerCase()
-    const filtrados = todosLosClientes.filter(c =>
-      c.nombre?.toLowerCase().includes(texto) ||
-      c.telefono?.toLowerCase().includes(texto) ||
-      c.obra?.toLowerCase().includes(texto)
-    )
-    mostrarClientes(filtrados)
   })
 
   document.getElementById('btn-guardar').addEventListener('click', async () => {
     const nombre = document.getElementById('campo-nombre').value.trim()
-    const errEl = document.getElementById('error-cliente')
-
+    const errEl  = document.getElementById('error-cliente')
     if (!nombre) {
       errEl.textContent = 'El nombre es obligatorio.'
       errEl.classList.remove('hidden')
@@ -153,10 +339,10 @@ export async function renderClientes(contenedor) {
 
     const datos = {
       nombre,
-      telefono: document.getElementById('campo-telefono').value.trim(),
+      telefono:  document.getElementById('campo-telefono').value.trim(),
       direccion: document.getElementById('campo-direccion').value.trim(),
-      obra: document.getElementById('campo-obra').value.trim(),
-      notas: document.getElementById('campo-notas').value.trim(),
+      obra:      document.getElementById('campo-obra').value.trim(),
+      notas:     document.getElementById('campo-notas').value.trim(),
     }
 
     let error
@@ -172,9 +358,14 @@ export async function renderClientes(contenedor) {
       return
     }
 
-    cerrarModal()
-    cargarClientes()
-  })
+    document.getElementById('modal-cliente').classList.add('hidden')
 
-  cargarClientes()
+    // Recargar clientes
+    const { data: nuevosClientes } = await supabase.from('clientes').select('*').order('nombre')
+    clientes.splice(0, clientes.length, ...(nuevosClientes || []))
+
+    if (clienteEditandoId) {
+      await cargarFichaCliente(clienteEditandoId)
+    }
+  })
 }
