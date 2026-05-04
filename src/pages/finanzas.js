@@ -659,7 +659,7 @@ async function renderComisiones() {
         `${checks.length} seleccionados — U$S ${total.toFixed(2)}`
     }
 
-    window.liquidarSeleccionados = async () => {
+window.liquidarSeleccionados = async () => {
       const checks = [...document.querySelectorAll('.check-cobro:checked')]
       if (!checks.length) { alert('Seleccioná al menos un cobro'); return }
 
@@ -668,7 +668,6 @@ async function renderComisiones() {
 
       if (!confirm(`¿Confirmás liquidar U$S ${total.toFixed(2)} ($ ${Math.round(total * tc).toLocaleString('es-AR')})?`)) return
 
-      // Crear liquidación
       const { data: liq, error } = await supabase
         .from('liquidaciones')
         .insert({
@@ -682,9 +681,7 @@ async function renderComisiones() {
 
       if (error) { alert('Error: ' + error.message); return }
 
-      // Marcar cobros como liquidados
       const cobrosIds = checks.map(c => c.dataset.id)
-
       await supabase.from('liquidacion_cobros').insert(
         checks.map(c => ({
           liquidacion_id: liq.id,
@@ -692,14 +689,26 @@ async function renderComisiones() {
           comision_usd: parseFloat(c.dataset.comision)
         }))
       )
-
       await supabase.from('cobros')
         .update({ liquidado: true, liquidacion_id: liq.id })
         .in('id', cobrosIds)
 
       alert(`✅ Liquidación registrada por U$S ${total.toFixed(2)}`)
       renderComisiones()
-      window.liquidarVentaDesdeComisiones = async (cotId, totalFinal, totalNeto, numero) => {
+    }
+
+    window.liquidarVentaDesdeComisiones = async (cotId, totalFinal, totalNeto, numero) => {
+      // Verificar si ya hay liquidación para esta cotización
+      const { data: cobrosYaLiquid } = await supabase
+        .from('cobros')
+        .select('id, liquidado')
+        .eq('cotizacion_id', cotId)
+        .eq('liquidado', true)
+
+      if (cobrosYaLiquid?.length) {
+        if (!confirm(`Esta venta ya tiene ${cobrosYaLiquid.length} cobro(s) liquidado(s). ¿Querés liquidar de todas formas el 100%?`)) return
+      }
+
       const utilidad = totalFinal - totalNeto
       const comision = utilidad * 0.25
       const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
@@ -719,12 +728,10 @@ async function renderComisiones() {
 
       if (error) { alert('Error: ' + error.message); return }
 
-      // Marcar todos los cobros de esa cotización como liquidados
       const { data: cobrosVenta } = await supabase
         .from('cobros')
         .select('id')
         .eq('cotizacion_id', cotId)
-        .eq('liquidado', false)
 
       if (cobrosVenta?.length) {
         const ids = cobrosVenta.map(c => c.id)
@@ -742,8 +749,7 @@ async function renderComisiones() {
 
       alert(`✅ Comisión de U$S ${comision.toFixed(2)} liquidada`)
       renderComisiones()
-    }
-    }
+    }  
   }
 
   async function cargarHistorialLiquidaciones() {
