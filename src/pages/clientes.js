@@ -247,45 +247,93 @@ export async function renderClientes(contenedor) {
         ` : '<p class="text-gray-400 text-sm text-center py-6">Sin presupuestos.</p>'}
       </div>
 
-      <!-- Cobros -->
+<!-- Cuenta corriente -->
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
-          <h4 class="font-semibold text-gray-700 text-sm">Movimientos de cuenta corriente (${(cobros||[]).length})</h4>
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+          <h4 class="font-semibold text-gray-700 text-sm">Cuenta corriente</h4>
+          <button onclick="exportarCtaCteSheets('${cli.id}')"
+            class="text-xs text-blue-600 border border-blue-200 hover:bg-blue-50 px-3 py-1 rounded-lg">
+            📊 Exportar
+          </button>
         </div>
-        ${(cobros||[]).length ? `
-        <table class="w-full text-sm">
-          <thead><tr class="text-xs text-gray-500 border-b">
+        <table class="w-full text-xs">
+          <thead><tr class="text-gray-500 border-b bg-gray-50">
             <th class="px-4 py-2 text-left">Fecha</th>
             <th class="px-4 py-2 text-left">Concepto</th>
-            <th class="px-4 py-2 text-left">Forma</th>
-            <th class="px-4 py-2 text-right">U$S</th>
-            <th class="px-4 py-2 text-right">$</th>
-            <th class="px-4 py-2 text-center">T/C</th>
+            <th class="px-4 py-2 text-right text-red-600">DEBE U$S</th>
+            <th class="px-4 py-2 text-right text-green-600">HABER U$S</th>
+            <th class="px-4 py-2 text-right">SALDO U$S</th>
           </tr></thead>
           <tbody>
-            ${(cobros||[]).map((c, i) => `
-              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
-                <td class="px-4 py-2 text-xs">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
-                <td class="px-4 py-2 text-xs">${c.concepto || ''}</td>
-                <td class="px-4 py-2 text-xs">${c.tipo_pago}</td>
-                <td class="px-4 py-2 text-right text-xs font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
-                <td class="px-4 py-2 text-right text-xs text-blue-600">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
-                <td class="px-4 py-2 text-center text-xs text-gray-400">${c.tc || '-'}</td>
-              </tr>
-            `).join('')}
-            <!-- Fila total -->
-            <tr class="bg-gray-900 text-white">
-              <td colspan="3" class="px-4 py-2 text-xs font-bold">TOTAL COBRADO</td>
-              <td class="px-4 py-2 text-right text-xs font-bold">U$S ${totalCobrado.toFixed(2)}</td>
-              <td class="px-4 py-2 text-right text-xs font-bold">$ ${Math.round(totalCobradoArs).toLocaleString('es-AR')}</td>
-              <td></td>
+            ${(() => {
+              // Construir movimientos mezclando ventas y cobros
+              const movimientos = []
+
+              // Ventas aprobadas = DEBE
+              ;(cots || []).filter(c => c.estado === 'aprobada').forEach(c => {
+                movimientos.push({
+                  fecha: c.created_at,
+                  concepto: `Venta 2026-${String(c.numero).padStart(3,'0')}`,
+                  debe: c.total_bruto_usd || c.total_final || 0,
+                  haber: 0,
+                  tipo: 'venta'
+                })
+              })
+
+              // Cobros = HABER
+              ;(cobros || []).forEach(c => {
+                movimientos.push({
+                  fecha: c.fecha + 'T12:00:00',
+                  concepto: c.concepto || 'Cobro',
+                  debe: 0,
+                  haber: c.monto_usd || 0,
+                  tipo: 'cobro',
+                  forma: c.tipo_pago,
+                  tc: c.tc
+                })
+              })
+
+              // Ordenar por fecha
+              movimientos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+
+              let saldo = 0
+              return movimientos.map((m, i) => {
+                saldo += m.debe - m.haber
+                const saldoColor = saldo > 0 ? 'text-red-600' : saldo < 0 ? 'text-green-600' : 'text-gray-500'
+                return `
+                  <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${m.tipo === 'venta' ? 'border-l-2 border-l-red-300' : 'border-l-2 border-l-green-300'}">
+                    <td class="px-4 py-2">${new Date(m.fecha).toLocaleDateString('es-AR')}</td>
+                    <td class="px-4 py-2">
+                      ${m.concepto}
+                      ${m.forma ? `<span class="text-gray-400 ml-1">(${m.forma})</span>` : ''}
+                    </td>
+                    <td class="px-4 py-2 text-right font-medium ${m.debe ? 'text-red-600' : 'text-gray-300'}">
+                      ${m.debe ? 'U$S ' + m.debe.toFixed(2) : '-'}
+                    </td>
+                    <td class="px-4 py-2 text-right font-medium ${m.haber ? 'text-green-600' : 'text-gray-300'}">
+                      ${m.haber ? 'U$S ' + m.haber.toFixed(2) : '-'}
+                    </td>
+                    <td class="px-4 py-2 text-right font-bold ${saldoColor}">
+                      U$S ${Math.abs(saldo).toFixed(2)}
+                      ${saldo > 0 ? '<span class="text-xs font-normal"> D</span>' : saldo < 0 ? '<span class="text-xs font-normal"> A favor</span>' : ''}
+                    </td>
+                  </tr>
+                `
+              }).join('')
+            })()}
+            <!-- Totales -->
+            <tr class="bg-gray-900 text-white font-bold">
+              <td colspan="2" class="px-4 py-2 text-xs">TOTALES</td>
+              <td class="px-4 py-2 text-right text-xs text-red-300">U$S ${totalVentas.toFixed(2)}</td>
+              <td class="px-4 py-2 text-right text-xs text-green-300">U$S ${totalCobrado.toFixed(2)}</td>
+              <td class="px-4 py-2 text-right text-xs ${saldo > 0 ? 'text-red-300' : 'text-green-300'}">
+                U$S ${Math.abs(saldo).toFixed(2)} ${saldo > 0 ? 'DEBE' : 'A FAVOR'}
+              </td>
             </tr>
           </tbody>
         </table>
-        ` : '<p class="text-gray-400 text-sm text-center py-6">Sin movimientos.</p>'}
       </div>
     `
-
     // Función editar cliente
     window.editarCliente = (id) => {
       const c = clientes.find(x => x.id === id)
@@ -301,10 +349,13 @@ export async function renderClientes(contenedor) {
     }
 
     // Exportar a Sheets
-    window.exportarClienteSheets = async (id) => {
-      alert('Función de exportar a Sheets en desarrollo.')
+window.exportarCtaCteSheets = async (id) => {
+      alert('Exportando cuenta corriente... (en desarrollo)')
     }
 
+    window.exportarClienteSheets = async (id) => {
+      alert('Exportando ficha completa... (en desarrollo)')
+    }
     // Imprimir estado de cuenta
     window.imprimirEstadoCuenta = async (id) => {
       window.print()
