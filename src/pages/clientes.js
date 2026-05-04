@@ -442,9 +442,55 @@ export async function renderClientes(contenedor) {
 
     // Exportar a Sheets
 window.exportarCtaCteSheets = async (id) => {
-      alert('Exportando cuenta corriente... (en desarrollo)')
-    }
+      const btn = document.querySelector('[onclick="exportarCtaCteSheets(\'' + id + '\')"]')
+      if (btn) { btn.textContent = '⏳ Exportando...'; btn.disabled = true }
 
+      const movimientos = []
+
+      // Ventas aprobadas = DEBE
+      ;(cots || []).filter(c => c.estado === 'aprobada').forEach(c => {
+        movimientos.push({
+          fecha: new Date(c.created_at).toLocaleDateString('es-AR'),
+          concepto: `Venta 2026-${String(c.numero).padStart(3,'0')}`,
+          debe: c.total_bruto_usd || c.total_final || 0,
+          haber: 0
+        })
+      })
+
+      // Cobros = HABER
+      ;(cobros || []).forEach(c => {
+        movimientos.push({
+          fecha: new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR'),
+          concepto: c.concepto || 'Cobro',
+          debe: 0,
+          haber: c.monto_usd || 0
+        })
+      })
+
+      // Ordenar por fecha
+      movimientos.sort((a, b) => new Date(a.fecha.split('/').reverse().join('-')) - new Date(b.fecha.split('/').reverse().join('-')))
+
+      const datos = {
+        nombre: cli.nombre,
+        codigo: cli.codigo || '',
+        telefono: cli.telefono || '',
+        obra: cli.obra || '',
+        totalVentas,
+        totalCobrado,
+        saldo,
+        movimientos
+      }
+
+      const url = `https://script.google.com/macros/s/AKfycby-It6dRCUuRL6KQMwF3uiIYqRDtXrN-eYkHX64L2m4WbiN0zGxwa3SzegPpUhyz1imyA/exec?action=ctacte&datos=${encodeURIComponent(JSON.stringify(datos))}`
+
+      try {
+        await fetch(url)
+        if (btn) { btn.textContent = '✅ Exportado'; btn.disabled = false }
+        setTimeout(() => { if (btn) btn.textContent = '📊 Exportar' }, 3000)
+      } catch (e) {
+        if (btn) { btn.textContent = '❌ Error'; btn.disabled = false }
+      }
+    }
     window.exportarClienteSheets = async (id) => {
       alert('Exportando ficha completa... (en desarrollo)')
     }
