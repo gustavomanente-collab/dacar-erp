@@ -215,9 +215,22 @@ export async function renderClientes(contenedor) {
 
       <!-- Presupuestos -->
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 overflow-hidden">
-        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200">
+        <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-3">
           <h4 class="font-semibold text-gray-700 text-sm">Presupuestos (${(cots||[]).length})</h4>
+          <div class="flex gap-2">
+            <button onclick="filtrarPptos('todos')" id="f-todos"
+              class="px-2 py-1 text-xs rounded-full bg-gray-900 text-white font-medium">Todos</button>
+            <button onclick="filtrarPptos('borrador')" id="f-borrador"
+              class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">Borrador</button>
+            <button onclick="filtrarPptos('enviada')" id="f-enviada"
+              class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200">Enviada</button>
+            <button onclick="filtrarPptos('aprobada')" id="f-aprobada"
+              class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 hover:bg-green-200">Aprobada</button>
+            <button onclick="filtrarPptos('rechazada')" id="f-rechazada"
+              class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-600 hover:bg-red-200">Rechazada</button>
+          </div>
         </div>
+        <div id="tabla-pptos">
         ${(cots||[]).length ? `
         <table class="w-full text-sm">
           <thead><tr class="text-xs text-gray-500 border-b">
@@ -228,8 +241,8 @@ export async function renderClientes(contenedor) {
           </tr></thead>
           <tbody>
             ${(cots||[]).map((c, i) => `
-              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-green-50 cursor-pointer"
-                onclick="navigate('historial')">
+<tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-green-50 cursor-pointer"
+                data-estado="${c.estado}"onclick="verDetallePpto('${c.id}', '${cli.id}')">
                 <td class="px-4 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
                 <td class="px-4 py-2 text-gray-500 text-xs">${new Date(c.created_at).toLocaleDateString('es-AR')}</td>
                 <td class="px-4 py-2">
@@ -244,9 +257,9 @@ export async function renderClientes(contenedor) {
             `).join('')}
           </tbody>
         </table>
-        ` : '<p class="text-gray-400 text-sm text-center py-6">Sin presupuestos.</p>'}
+` : '<p class="text-gray-400 text-sm text-center py-6">Sin presupuestos.</p>'}
+        </div>
       </div>
-
 <!-- Cuenta corriente -->
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
@@ -334,6 +347,85 @@ export async function renderClientes(contenedor) {
         </table>
       </div>
     `
+    // Filtrar presupuestos
+    window.filtrarPptos = (estado) => {
+      ;['todos','borrador','enviada','aprobada','rechazada'].forEach(e => {
+        const btn = document.getElementById(`f-${e}`)
+        if (!btn) return
+        btn.className = e === estado
+          ? `px-2 py-1 text-xs rounded-full font-medium ${
+              e === 'todos' ? 'bg-gray-900 text-white' :
+              e === 'borrador' ? 'bg-gray-500 text-white' :
+              e === 'enviada' ? 'bg-blue-600 text-white' :
+              e === 'aprobada' ? 'bg-green-600 text-white' :
+              'bg-red-600 text-white'}`
+          : `px-2 py-1 text-xs rounded-full ${
+              e === 'todos' ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' :
+              e === 'borrador' ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' :
+              e === 'enviada' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' :
+              e === 'aprobada' ? 'bg-green-100 text-green-700 hover:bg-green-200' :
+              'bg-red-100 text-red-600 hover:bg-red-200'}`
+      })
+
+      const filas = document.querySelectorAll('#tabla-pptos tbody tr')
+      filas.forEach(fila => {
+        const estadoFila = fila.dataset.estado
+        fila.style.display = (estado === 'todos' || estadoFila === estado) ? '' : 'none'
+      })
+    }
+
+    // Ver detalle de presupuesto desde ficha cliente
+    window.verDetallePpto = async (cotId, clienteId) => {
+      const { data: items } = await supabase
+        .from('cotizacion_items').select('*').eq('cotizacion_id', cotId)
+      const cot = cots.find(c => c.id === cotId)
+      if (!cot) return
+
+      const modal = document.createElement('div')
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
+      modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:700px;max-height:90vh;overflow-y:auto;">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">
+                Presupuesto 2026-${String(cot.numero).padStart(3,'0')}
+              </h3>
+              <p class="text-sm text-gray-500">${cli.nombre}</p>
+            </div>
+            <button onclick="this.closest('[style]').remove()"
+              class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          </div>
+
+          <table class="w-full text-sm mb-4">
+            <thead>
+              <tr class="bg-gray-900 text-white">
+                <th class="px-3 py-2 text-left text-xs">Descripción</th>
+                <th class="px-2 py-2 text-center text-xs">Cant/m²</th>
+                <th class="px-2 py-2 text-right text-xs">Precio U$S</th>
+                <th class="px-2 py-2 text-right text-xs">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(items || []).map((it, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 text-xs">${it.descripcion}</td>
+                  <td class="px-2 py-2 text-center text-xs">${it.cantidad}</td>
+                  <td class="px-2 py-2 text-right text-xs">U$S ${(it.precio_unitario||0).toFixed(2)}</td>
+                  <td class="px-2 py-2 text-right text-xs font-semibold">U$S ${(it.cantidad * it.precio_unitario).toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="flex justify-between items-center border-t pt-3">
+            <span class="text-sm font-bold text-gray-900">TOTAL</span>
+            <span class="text-xl font-black text-green-700">U$S ${(cot.total_bruto_usd || cot.total_final || 0).toFixed(2)}</span>
+          </div>
+        </div>
+      `
+      document.body.appendChild(modal)
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
+    }
     // Función editar cliente
     window.editarCliente = (id) => {
       const c = clientes.find(x => x.id === id)
