@@ -3,74 +3,79 @@ import { generarPDF } from '../pdf.js'
 
 const db = {
 "MAXIMMA": {
-ancho: 0.999,
-foilInt: true,
-data: {
-"15": { "FO/PR": 19.82, "FO/ZN": 16.29, "FO/CI": 16.81 }
-}
+  ancho: 0.999,
+  foilInt: true,
+  data: {
+    "15": { "FO/PR": 20.15, "FO/ZN": 16.57, "FO/CI": 17.11 }
+  }
 },
 
 "WAVE LS": {
-ancho: 0.99,
-foilInt: true,
-data: {
-"15": { "FO/PR": 21.09, "FO/ZN": 17.53, "FO/CI": 18.00 },
-"30": { "FO/PR": 23.80, "FO/ZN": 20.22, "FO/CI": 20.69 },
-"50": { "FO/PR": 27.42, "FO/ZN": 23.84, "FO/CI": 24.31 }
-}
+  ancho: 0.99,
+  foilInt: true,
+  data: {
+    "15": { "FO/PR": 21.45, "FO/ZN": 17.83, "FO/CI": 18.30 },
+    "30": { "FO/PR": 24.20, "FO/ZN": 20.57, "FO/CI": 21.04 },
+    "50": { "FO/PR": 27.89, "FO/ZN": 24.25, "FO/CI": 24.72 },
+    "80": { "FO/PR": 33.83, "FO/ZN": 30.20, "FO/CI": 30.68 }
+  }
 },
 
 "COVER LS": {
-ancho: 1.00,
-foilInt: true,
-data: {
-"15": { "FO/PR": 21.09, "FO/ZN": 17.53, "FO/CI": 18.00 },
-"30": { "FO/PR": 23.80, "FO/ZN": 20.22, "FO/CI": 20.69 },
-"50": { "FO/PR": 27.42, "FO/ZN": 23.84, "FO/CI": 24.31 }
-}
+  ancho: 1.00,
+  foilInt: true,
+  data: {
+    "15": { "FO/PR": 21.45, "FO/ZN": 17.83, "FO/CI": 18.30 },
+    "30": { "FO/PR": 24.20, "FO/ZN": 20.57, "FO/CI": 21.04 },
+    "50": { "FO/PR": 27.89, "FO/ZN": 24.25, "FO/CI": 24.72 },
+    "80": { "FO/PR": 33.83, "FO/ZN": 30.20, "FO/CI": 30.68 }
+  }
 },
-"COVER LT": {  ancho: 1.00,
-foilInt: false,
-data: {
-"30": { "PR/PR": 35.36, "PR/ZN": 31.51, "PR/CI": 32.01 },
-"50": { "PR/PR": 39.32, "PR/ZN": 35.47, "PR/CI": 35.98 },
-"80": { "PR/PR": 45.59, "PR/ZN": 41.74, "PR/CI": 42.24 },
-"100": { "PR/PR": 51.07, "PR/ZN": 47.21, "PR/CI": 47.72 }
-}
+
+"COVER LT": {
+  ancho: 1.00,
+  foilInt: false,
+  data: {
+    "30": { "PR/PR": 36.49, "PR/ZN": 32.51, "PR/CI": 33.03 },
+    "50": { "PR/PR": 40.57, "PR/ZN": 36.60, "PR/CI": 37.12 },
+    "60": { "PR/PR": 42.89, "PR/ZN": 38.91, "PR/CI": 39.44 },
+    "80": { "PR/PR": 47.05, "PR/ZN": 43.08, "PR/CI": 43.58 },
+    "100": { "PR/PR": 50.68, "PR/ZN": 48.72, "PR/CI": 49.25 }
+  }
 },
 
 "COVER LX": {
-ancho: 1.00,
-foilInt: false,
-data: {
-"50": { "PR/PR": 42.86, "PR/ZN": 38.65, "PR/CI": 39.21 },
-"80": { "PR/PR": 49.69, "PR/ZN": 45.50, "PR/CI": 46.06 }
-}
+  ancho: 1.00,
+  foilInt: false,
+  data: {
+    "50": { "PR/PR": 44.22 },
+    "80": { "PR/PR": 51.27 }
+  }
 },
 
 "FRONT": {
-ancho: 1.14,
-foilInt: false,
-data: {
-"30": { "PR/PR": 33.38, "PR/ZN": 30.01, "PR/CI": 30.44 },
-"50": { "PR/PR": 37.58, "PR/ZN": 34.19, "PR/CI": 34.64 },
-"60": { "PR/PR": 39.54, "PR/ZN": 36.15, "PR/CI": 36.60 },
-"80": { "PR/PR": 43.44, "PR/ZN": 40.06, "PR/CI": 40.49 },
-"100": { "PR/PR": 47.74, "PR/ZN": 44.38, "PR/CI": 44.82 }
-}
+  ancho: 1.14,
+  foilInt: false,
+  data: {
+    "30": { "PR/PR": 34.45, "PR/ZN": 30.96, "PR/CI": 31.41 },
+    "50": { "PR/PR": 38.78, "PR/ZN": 35.28, "PR/CI": 35.74 },
+    "60": { "PR/PR": 40.80, "PR/ZN": 37.31, "PR/CI": 37.77 },
+    "80": { "PR/PR": 44.82, "PR/ZN": 41.34, "PR/CI": 41.79 },
+    "100": { "PR/PR": 49.27, "PR/ZN": 45.80, "PR/CI": 46.25 }
+  }
 },
 
 "SKIN": {
-ancho: 1.00,
-foilInt: false,
-data: {
-"40": { "PR/PR": 37.73 },
-"50": { "PR/PR": 39.82 },
-"60": { "PR/PR": 41.87 },
-"80": { "PR/PR": 45.37 }
+  ancho: 1.00,
+  foilInt: false,
+  data: {
+    "40": { "PR/PR": 40.05 },
+    "50": { "PR/PR": 42.28 },
+    "60": { "PR/PR": 45.33 },
+    "80": { "PR/PR": 49.79 }
+  }
 }
-}}
-
+}
 const colores = ["BLANCO","NEGRO MATE","GRIS GRAFITO","GRIS SILVER","AZUL MILENIUM","VERDE INGLES","ROJO TEJA","ESPECIAL"]
 const labelExt = { PR: 'Prepintada', ZN: 'Galvanizada', CI: 'Cincalum', FO: 'Foil' }
 
