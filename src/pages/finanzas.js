@@ -630,6 +630,166 @@ async function renderCalce() {
       .eq('estado', 'aprobada')
       .order('numero', { ascending: false })
 
+    const { data: cobros } = await supabase
+      .from('cobros').select('*').order('fecha_acreditacion')
+
+    const { data: pagos } = await supabase
+      .from('pagos_proveedor').select('*').order('fecha_acreditacion')
+
+    if (!cots?.length) {
+      el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay ventas aprobadas.</p>'
+      return
+    }
+
+    const calce = cots.map(cot => {
+      const cobradoVenta = (cobros || [])
+        .filter(c => c.cotizacion_id === cot.id)
+        .reduce((s, c) => s + (c.monto_usd || 0), 0)
+      const pagadoVenta = (pagos || [])
+        .filter(p => p.cotizacion_id === cot.id)
+        .reduce((s, p) => s + (p.monto_usd || 0), 0)
+      const totalVenta  = cot.total_bruto_usd || cot.total_final || 0
+      const costoVenta  = cot.total_neto || 0
+      const saldoCobrar = totalVenta - cobradoVenta
+      const saldoPagar  = costoVenta - pagadoVenta
+      const resultado   = cobradoVenta - pagadoVenta
+      return { ...cot, cobradoVenta, pagadoVenta, totalVenta, costoVenta, saldoCobrar, saldoPagar, resultado }
+    })
+
+    const totalCobrado = calce.reduce((s, c) => s + c.cobradoVenta, 0)
+    const totalPagado  = calce.reduce((s, c) => s + c.pagadoVenta, 0)
+    const posicionCaja = totalCobrado - totalPagado
+
+    el.innerHTML = `
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-green-600 font-medium mb-1">Total cobrado clientes</p>
+          <p class="text-xl font-black text-green-700">U$S ${totalCobrado.toFixed(2)}</p>
+        </div>
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-red-600 font-medium mb-1">Total pagado proveedor</p>
+          <p class="text-xl font-black text-red-700">U$S ${totalPagado.toFixed(2)}</p>
+        </div>
+        <div class="bg-${posicionCaja >= 0 ? 'blue' : 'orange'}-50 border border-${posicionCaja >= 0 ? 'blue' : 'orange'}-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-${posicionCaja >= 0 ? 'blue' : 'orange'}-600 font-medium mb-1">Posición de caja</p>
+          <p class="text-xl font-black text-${posicionCaja >= 0 ? 'blue' : 'orange'}-700">U$S ${posicionCaja.toFixed(2)}</p>
+          <p class="text-xs text-gray-400">${posicionCaja >= 0 ? '✅ Positiva' : '⚠️ Negativa'}</p>
+        </div>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
+        <div class="bg-gray-50 px-4 py-3 border-b">
+          <h4 class="font-semibold text-gray-700 text-sm">Calce por venta</h4>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">N° Ppto</th>
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-right">Venta U$S</th>
+              <th class="px-3 py-2 text-right">Cobrado</th>
+              <th class="px-3 py-2 text-right">Por cobrar</th>
+              <th class="px-3 py-2 text-right">Costo lista</th>
+              <th class="px-3 py-2 text-right">Pagado prov.</th>
+              <th class="px-3 py-2 text-right">Por pagar</th>
+              <th class="px-3 py-2 text-right">Resultado</th>
+            </tr></thead>
+            <tbody>
+              ${calce.map((c, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
+                  <td class="px-3 py-2">${c.clientes?.nombre || ''}</td>
+                  <td class="px-3 py-2 text-right">U$S ${c.totalVenta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-green-700 font-medium">U$S ${c.cobradoVenta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right ${c.saldoCobrar > 0 ? 'text-orange-600' : 'text-gray-400'}">
+                    ${c.saldoCobrar > 0 ? `U$S ${c.saldoCobrar.toFixed(2)}` : '✅'}
+                  </td>
+                  <td class="px-3 py-2 text-right text-gray-500">U$S ${c.costoVenta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-red-600 font-medium">U$S ${c.pagadoVenta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right ${c.saldoPagar > 0 ? 'text-red-500' : 'text-gray-400'}">
+                    ${c.saldoPagar > 0 ? `U$S ${c.saldoPagar.toFixed(2)}` : '✅'}
+                  </td>
+                  <td class="px-3 py-2 text-right font-bold ${c.resultado >= 0 ? 'text-green-700' : 'text-red-600'}">
+                    U$S ${c.resultado.toFixed(2)}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="bg-gray-900 text-white font-bold">
+                <td colspan="3" class="px-3 py-2 text-xs">TOTALES</td>
+                <td class="px-3 py-2 text-right text-xs text-green-300">U$S ${totalCobrado.toFixed(2)}</td>
+                <td></td>
+                <td></td>
+                <td class="px-3 py-2 text-right text-xs text-red-300">U$S ${totalPagado.toFixed(2)}</td>
+                <td></td>
+                <td class="px-3 py-2 text-right text-xs ${posicionCaja >= 0 ? 'text-blue-300' : 'text-orange-300'}">
+                  U$S ${posicionCaja.toFixed(2)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `
+
+    // Vencimientos próximos 30 días
+    const hoy = new Date()
+    const en30 = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000)
+    const vencimientos = []
+
+    ;(cobros || []).forEach(c => {
+      const facred = c.fecha_acreditacion || c.fecha
+      const d = new Date(facred + 'T12:00:00')
+      if (d >= hoy && d <= en30) {
+        vencimientos.push({ fecha: facred, tipo: 'cobro', descripcion: c.concepto || 'Cobro', monto: c.monto_usd, cheque: c.nro_cheque })
+      }
+    })
+    ;(pagos || []).forEach(p => {
+      const facred = p.fecha_acreditacion || p.fecha
+      const d = new Date(facred + 'T12:00:00')
+      if (d >= hoy && d <= en30) {
+        vencimientos.push({ fecha: facred, tipo: 'pago', descripcion: p.concepto || 'Pago proveedor', monto: p.monto_usd, cheque: p.nro_cheque })
+      }
+    })
+    vencimientos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+
+    if (vencimientos.length) {
+      el.innerHTML += `
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div class="bg-blue-50 px-4 py-3 border-b border-blue-100">
+            <h4 class="font-semibold text-blue-700 text-sm">📅 Vencimientos próximos 30 días</h4>
+          </div>
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">Fecha acred.</th>
+              <th class="px-3 py-2 text-left">Tipo</th>
+              <th class="px-3 py-2 text-left">Descripción</th>
+              <th class="px-3 py-2 text-left">N° Cheque</th>
+              <th class="px-3 py-2 text-right">Monto U$S</th>
+            </tr></thead>
+            <tbody>
+              ${vencimientos.map((v, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-medium">${new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                  <td class="px-3 py-2">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium ${v.tipo === 'cobro' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                      ${v.tipo === 'cobro' ? '⬆️ Ingreso' : '⬇️ Egreso'}
+                    </span>
+                  </td>
+                  <td class="px-3 py-2">${v.descripcion}</td>
+                  <td class="px-3 py-2 text-gray-400">${v.cheque || '-'}</td>
+                  <td class="px-3 py-2 text-right font-bold ${v.tipo === 'cobro' ? 'text-green-700' : 'text-red-600'}">
+                    ${v.tipo === 'cobro' ? '+' : '-'} U$S ${(v.monto || 0).toFixed(2)}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `
+    }
+  
 // Calendario de vencimientos próximos 30 días
     const hoy = new Date()
     const en30 = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000)
