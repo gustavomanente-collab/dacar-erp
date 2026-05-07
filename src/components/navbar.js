@@ -5,8 +5,8 @@ export function renderNavbar(perfil) {
   const rolLabel   = esGerencia ? '👔 Gerencia' : esAdmin ? '📋 Administrativo' : '🧑‍💼 Vendedor'
 
   const menuItems = `
-  ${esGerencia ? `<button onclick="navigate('dashboard')"
-          class="text-sm text-gray-600 hover:text-green-700 font-medium">Dashboard</button>` : ''}
+    ${esGerencia ? `<button onclick="navigate('dashboard')"
+        class="text-sm text-gray-600 hover:text-green-700 font-medium">Dashboard</button>` : ''}
     <button onclick="navigate('clientes')"
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Clientes</button>
     ${esGerencia || esVendedor ? `
@@ -16,10 +16,12 @@ export function renderNavbar(perfil) {
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Historial</button>
     <button onclick="navigate('finanzas')"
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Finanzas</button>
+    ${esGerencia ? `<button onclick="navigate('proyectos')"
+      class="text-sm text-gray-600 hover:text-green-700 font-medium">Proyectos</button>` : ''}
   `
 
   const menuItemsMobile = `
-  ${esGerencia ? `<button onclick="navigate('dashboard'); toggleMenu()"
+    ${esGerencia ? `<button onclick="navigate('dashboard'); toggleMenu()"
       class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
       📊 Dashboard
     </button>` : ''}
@@ -40,6 +42,10 @@ export function renderNavbar(perfil) {
       class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
       💰 Finanzas
     </button>
+    ${esGerencia ? `<button onclick="navigate('proyectos'); toggleMenu()"
+      class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
+      🏗️ Proyectos
+    </button>` : ''}
     <button id="btn-logout-mobile"
       class="w-full text-left px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 rounded-lg font-medium">
       🚪 Cerrar sesión
