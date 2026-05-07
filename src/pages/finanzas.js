@@ -272,6 +272,16 @@ contenedor.innerHTML = `
                 </select>
               </div>
               <div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Fecha acreditación</label>
+                <input id="ficha-facred" type="date" value="${new Date().toISOString().split('T')[0]}"
+                  class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">N° Cheque (opcional)</label>
+                <input id="ficha-cheque" type="text" placeholder="Ej: 12345678"
+                  class="w-full rounded border-gray-300 text-xs" />
+              </div>
                 <label class="block text-xs text-gray-500 mb-1">Concepto</label>
                 <input id="ficha-concepto" type="text" placeholder="Anticipo, saldo..."
                   class="w-full rounded border-gray-300 text-xs" />
@@ -304,17 +314,19 @@ contenedor.innerHTML = `
         const monto = parseFloat(document.getElementById('ficha-monto').value) || 0
         const tc = parseFloat(document.getElementById('ficha-tc')?.value) || cot.tc_cobro || 1150
         if (!monto) { alert('Ingresá el monto'); return }
-        const { error } = await supabase.from('cobros').insert({
+const { error } = await supabase.from('cobros').insert({
           cotizacion_id: cotId,
           cliente_id: clienteId,
           fecha: document.getElementById('ficha-fecha').value,
+          fecha_acreditacion: document.getElementById('ficha-facred')?.value || document.getElementById('ficha-fecha').value,
+          nro_cheque: document.getElementById('ficha-cheque')?.value || null,
           monto_usd: monto,
           monto_ars: monto * tc,
           tc,
           tipo_pago: document.getElementById('ficha-forma').value,
           concepto: document.getElementById('ficha-concepto').value || 'Cobro',
         })
-        if (error) { alert('Error: ' + error.message); return }
+                if (error) { alert('Error: ' + error.message); return }
         modal.remove()
         renderPendientes()
       }
@@ -497,6 +509,16 @@ window.borrarCobro = async (id) => {
             <label class="block text-xs text-gray-500 mb-1">N° Factura</label>
             <input id="prov-factura" type="text" placeholder="0001-00001234"
               class="w-full rounded-lg border-gray-300 text-sm" />
+              <div>
+            <label class="block text-xs text-gray-500 mb-1">Fecha acreditación</label>
+            <input id="prov-facred" type="date" value="${new Date().toISOString().split('T')[0]}"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">N° Cheque (opcional)</label>
+            <input id="prov-cheque" type="text" placeholder="Ej: 12345678"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
           </div>
           <div>
             <label class="block text-xs text-gray-500 mb-1">Concepto</label>
@@ -533,13 +555,15 @@ window.borrarCobro = async (id) => {
 const cotId = document.getElementById('prov-cot').value
       const { error } = await supabase.from('pagos_proveedor').insert({
         fecha: document.getElementById('prov-fecha').value,
+        fecha_acreditacion: document.getElementById('prov-facred')?.value || document.getElementById('prov-fecha').value,
+        nro_cheque: document.getElementById('prov-cheque')?.value || null,
         monto_usd: monto,
         tipo_pago: document.getElementById('prov-tipo').value,
         nro_factura: document.getElementById('prov-factura').value,
         concepto: document.getElementById('prov-concepto').value,
         cotizacion_id: cotId || null
       })
-            if (error) { alert('Error: ' + error.message); return }
+                  if (error) { alert('Error: ' + error.message); return }
       const msgEl = document.getElementById('msg-prov')
       msgEl.textContent = `✅ Pago de U$S ${monto} ($ ${Math.round(monto*tc).toLocaleString('es-AR')}) registrado`
       msgEl.classList.remove('hidden')
@@ -606,12 +630,77 @@ async function renderCalce() {
       .eq('estado', 'aprobada')
       .order('numero', { ascending: false })
 
-    const { data: cobros } = await supabase
-      .from('cobros').select('*')
+// Calendario de vencimientos próximos 30 días
+    const hoy = new Date()
+    const en30 = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000)
 
-    const { data: pagos } = await supabase
-      .from('pagos_proveedor').select('*')
+    const vencimientos = []
 
+    ;(cobros || []).forEach(c => {
+      const facred = c.fecha_acreditacion || c.fecha
+      const d = new Date(facred + 'T12:00:00')
+      if (d >= hoy && d <= en30) {
+        vencimientos.push({
+          fecha: facred,
+          tipo: 'cobro',
+          descripcion: c.concepto || 'Cobro',
+          monto: c.monto_usd,
+          cheque: c.nro_cheque
+        })
+      }
+    })
+
+    ;(pagos || []).forEach(p => {
+      const facred = p.fecha_acreditacion || p.fecha
+      const d = new Date(facred + 'T12:00:00')
+      if (d >= hoy && d <= en30) {
+        vencimientos.push({
+          fecha: facred,
+          tipo: 'pago',
+          descripcion: p.concepto || 'Pago proveedor',
+          monto: p.monto_usd,
+          cheque: p.nro_cheque
+        })
+      }
+    })
+
+    vencimientos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+
+    if (vencimientos.length) {
+      el.innerHTML += `
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
+          <div class="bg-blue-50 px-4 py-3 border-b border-blue-100">
+            <h4 class="font-semibold text-blue-700 text-sm">📅 Vencimientos próximos 30 días</h4>
+          </div>
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">Fecha acred.</th>
+              <th class="px-3 py-2 text-left">Tipo</th>
+              <th class="px-3 py-2 text-left">Descripción</th>
+              <th class="px-3 py-2 text-left">N° Cheque</th>
+              <th class="px-3 py-2 text-right">Monto U$S</th>
+            </tr></thead>
+            <tbody>
+              ${vencimientos.map((v, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-medium">${new Date(v.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                  <td class="px-3 py-2">
+                    <span class="px-2 py-0.5 rounded-full text-xs font-medium ${v.tipo === 'cobro' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                      ${v.tipo === 'cobro' ? '⬆️ Ingreso' : '⬇️ Egreso'}
+                    </span>
+                  </td>
+                  <td class="px-3 py-2">${v.descripcion}</td>
+                  <td class="px-3 py-2 text-gray-400">${v.cheque || '-'}</td>
+                  <td class="px-3 py-2 text-right font-bold ${v.tipo === 'cobro' ? 'text-green-700' : 'text-red-600'}">
+                    ${v.tipo === 'cobro' ? '+' : '-'} U$S ${(v.monto || 0).toFixed(2)}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `
+    }
     if (!cots?.length) {
       el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay ventas aprobadas.</p>'
       return
