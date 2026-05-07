@@ -24,6 +24,10 @@ export async function renderFinanzas(contenedor, perfil) {
         </button>` : ''}
         ${esGerencia ? `
         <button onclick="tabFin('comisiones')" id="tab-comisiones"
+        <button onclick="tabFin('calce')" id="tab-calce"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          ⚖️ Calce
+        </button>
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           🤝 Comisiones
         </button>` : ''}
@@ -51,6 +55,7 @@ export async function renderFinanzas(contenedor, perfil) {
     if (tab === 'cobros')      renderCobros()
     if (tab === 'proveedor')   renderProveedor()
     if (tab === 'comisiones')  renderComisiones()
+    if (tab === 'calce')       renderCalce()
   }
 
   async function renderPendientes() {
@@ -484,6 +489,12 @@ window.borrarCobro = async (id) => {
             </select>
           </div>
           <div>
+          <div class="col-span-2">
+            <label class="block text-xs text-gray-500 mb-1">Vincular a cotización (opcional)</label>
+            <select id="prov-cot" class="w-full rounded-lg border-gray-300 text-sm">
+              <option value="">Sin cotización específica</option>
+            </select>
+          </div>
             <label class="block text-xs text-gray-500 mb-1">N° Factura</label>
             <input id="prov-factura" type="text" placeholder="0001-00001234"
               class="w-full rounded-lg border-gray-300 text-sm" />
@@ -504,19 +515,32 @@ window.borrarCobro = async (id) => {
         <div id="lista-prov"><p class="text-gray-400 text-sm p-4">Cargando...</p></div>
       </div>
     `
+// Cargar cotizaciones aprobadas para vincular
+    const { data: cotsAprobadas } = await supabase
+      .from('cotizaciones')
+      .select('id, numero, clientes(nombre)')
+      .eq('estado', 'aprobada')
+      .order('numero', { ascending: false })
 
+    const selProvCot = document.getElementById('prov-cot')
+    ;(cotsAprobadas || []).forEach(c => {
+      const nro = `2026-${String(c.numero).padStart(3,'0')}`
+      selProvCot.add(new Option(`${nro} — ${c.clientes?.nombre || ''}`, c.id))
+    })
     document.getElementById('btn-guardar-prov').addEventListener('click', async () => {
       const monto = parseFloat(document.getElementById('prov-monto').value) || 0
       const tc = parseFloat(document.getElementById('prov-tc').value) || 1150
       if (!monto) { alert('Ingresá el monto'); return }
+const cotId = document.getElementById('prov-cot').value
       const { error } = await supabase.from('pagos_proveedor').insert({
         fecha: document.getElementById('prov-fecha').value,
         monto_usd: monto,
         tipo_pago: document.getElementById('prov-tipo').value,
         nro_factura: document.getElementById('prov-factura').value,
         concepto: document.getElementById('prov-concepto').value,
+        cotizacion_id: cotId || null
       })
-      if (error) { alert('Error: ' + error.message); return }
+            if (error) { alert('Error: ' + error.message); return }
       const msgEl = document.getElementById('msg-prov')
       msgEl.textContent = `✅ Pago de U$S ${monto} ($ ${Math.round(monto*tc).toLocaleString('es-AR')}) registrado`
       msgEl.classList.remove('hidden')
@@ -573,7 +597,125 @@ window.borrarCobro = async (id) => {
       cargarProv()
     }
   }
+async function renderCalce() {
+    const el = document.getElementById('fin-content')
+    el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
 
+    const { data: cots } = await supabase
+      .from('cotizaciones')
+      .select('*, clientes(nombre, obra)')
+      .eq('estado', 'aprobada')
+      .order('numero', { ascending: false })
+
+    const { data: cobros } = await supabase
+      .from('cobros').select('*')
+
+    const { data: pagos } = await supabase
+      .from('pagos_proveedor').select('*')
+
+    if (!cots?.length) {
+      el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay ventas aprobadas.</p>'
+      return
+    }
+
+    // Calcular calce por venta
+    const calce = cots.map(cot => {
+      const cobradoVenta = (cobros || [])
+        .filter(c => c.cotizacion_id === cot.id)
+        .reduce((s, c) => s + (c.monto_usd || 0), 0)
+
+      const pagadoVenta = (pagos || [])
+        .filter(p => p.cotizacion_id === cot.id)
+        .reduce((s, p) => s + (p.monto_usd || 0), 0)
+
+      const totalVenta = cot.total_bruto_usd || cot.total_final || 0
+      const costoVenta = cot.total_neto || 0
+      const saldoCobrar = totalVenta - cobradoVenta
+      const saldoPagar  = costoVenta - pagadoVenta
+      const resultado   = cobradoVenta - pagadoVenta
+
+      return { ...cot, cobradoVenta, pagadoVenta, totalVenta, costoVenta, saldoCobrar, saldoPagar, resultado }
+    })
+
+    const totalCobrado  = calce.reduce((s, c) => s + c.cobradoVenta, 0)
+    const totalPagado   = calce.reduce((s, c) => s + c.pagadoVenta, 0)
+    const posicionCaja  = totalCobrado - totalPagado
+
+    el.innerHTML = `
+      <!-- Resumen posición de caja -->
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-green-600 font-medium mb-1">Total cobrado clientes</p>
+          <p class="text-xl font-black text-green-700">U$S ${totalCobrado.toFixed(2)}</p>
+        </div>
+        <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-red-600 font-medium mb-1">Total pagado proveedor</p>
+          <p class="text-xl font-black text-red-700">U$S ${totalPagado.toFixed(2)}</p>
+        </div>
+        <div class="bg-${posicionCaja >= 0 ? 'blue' : 'orange'}-50 border border-${posicionCaja >= 0 ? 'blue' : 'orange'}-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-${posicionCaja >= 0 ? 'blue' : 'orange'}-600 font-medium mb-1">Posición de caja</p>
+          <p class="text-xl font-black text-${posicionCaja >= 0 ? 'blue' : 'orange'}-700">U$S ${posicionCaja.toFixed(2)}</p>
+          <p class="text-xs text-gray-400">${posicionCaja >= 0 ? '✅ Positiva' : '⚠️ Negativa'}</p>
+        </div>
+      </div>
+
+      <!-- Detalle por venta -->
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="bg-gray-50 px-4 py-3 border-b">
+          <h4 class="font-semibold text-gray-700 text-sm">Calce por venta</h4>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead><tr class="bg-gray-900 text-white">
+            <th class="px-3 py-2 text-left">N° Ppto</th>
+            <th class="px-3 py-2 text-left">Cliente</th>
+            <th class="px-3 py-2 text-right">Venta U$S</th>
+            <th class="px-3 py-2 text-right">Cobrado</th>
+            <th class="px-3 py-2 text-right">Por cobrar</th>
+            <th class="px-3 py-2 text-right">Costo lista</th>
+            <th class="px-3 py-2 text-right">Pagado prov.</th>
+            <th class="px-3 py-2 text-right">Por pagar</th>
+            <th class="px-3 py-2 text-right">Resultado caja</th>
+          </tr></thead>
+          <tbody>
+            ${calce.map((c, i) => `
+              <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                <td class="px-3 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
+                <td class="px-3 py-2">${c.clientes?.nombre || ''}</td>
+                <td class="px-3 py-2 text-right">U$S ${c.totalVenta.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-green-700 font-medium">U$S ${c.cobradoVenta.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right ${c.saldoCobrar > 0 ? 'text-orange-600' : 'text-gray-400'}">
+                  ${c.saldoCobrar > 0 ? `U$S ${c.saldoCobrar.toFixed(2)}` : '✅'}
+                </td>
+                <td class="px-3 py-2 text-right text-gray-500">U$S ${c.costoVenta.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-red-600 font-medium">U$S ${c.pagadoVenta.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right ${c.saldoPagar > 0 ? 'text-red-500' : 'text-gray-400'}">
+                  ${c.saldoPagar > 0 ? `U$S ${c.saldoPagar.toFixed(2)}` : '✅'}
+                </td>
+                <td class="px-3 py-2 text-right font-bold ${c.resultado >= 0 ? 'text-green-700' : 'text-red-600'}">
+                  U$S ${c.resultado.toFixed(2)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="bg-gray-900 text-white font-bold">
+              <td colspan="3" class="px-3 py-2 text-xs">TOTALES</td>
+              <td class="px-3 py-2 text-right text-xs text-green-300">U$S ${totalCobrado.toFixed(2)}</td>
+              <td></td>
+              <td></td>
+              <td class="px-3 py-2 text-right text-xs text-red-300">U$S ${totalPagado.toFixed(2)}</td>
+              <td></td>
+              <td class="px-3 py-2 text-right text-xs ${posicionCaja >= 0 ? 'text-blue-300' : 'text-orange-300'}">
+                U$S ${posicionCaja.toFixed(2)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+        </div>
+      </div>
+    `
+  }
 async function renderComisiones() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
