@@ -168,6 +168,10 @@ export async function renderClientes(contenedor) {
           <div>
             <div class="flex items-center gap-2 mb-1">
               <h3 class="text-xl font-black text-gray-900">${cli.nombre}</h3>
+              <button onclick="navigator.clipboard.writeText('${cli.id}').then(() => alert('ID copiado al portapapeles'))"
+                class="text-xs text-blue-500 border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-full ml-1">
+                📋 Copiar ID
+              </button>
               <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">${cli.codigo || ''}</span>
             </div>
             <div class="text-sm text-gray-500 space-y-0.5">
