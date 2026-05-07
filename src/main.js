@@ -6,6 +6,7 @@ import { renderCotizador } from './pages/cotizador.js'
 import { renderHistorial } from './pages/historial.js'
 import { renderFinanzas } from './pages/finanzas.js'
 import { renderDashboard } from './pages/dashboard.js'
+import { renderProyectos } from './pages/proyectos.js'
 
 const app = document.getElementById('app')
 let perfilGlobal = null
@@ -98,6 +99,8 @@ function renderApp(pagina) {
 
   if (pagina === 'dashboard') {
     renderDashboard(contenido)
+    } else if (pagina === 'proyectos') {
+    renderProyectos(contenido)
   } else if (pagina === 'clientes') {
     renderClientes(contenido)
   } else if (pagina === 'cotizador') {
