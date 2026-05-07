@@ -440,23 +440,25 @@ export async function renderClientes(contenedor) {
       document.getElementById('modal-cliente').classList.remove('hidden')
     }
 
-    // Exportar a Sheets
-window.exportarCtaCteSheets = async (id) => {
+// Exportar a Sheets
+    window.exportarCtaCteSheets = async (id) => {
       const btn = document.querySelector(`[onclick="exportarCtaCteSheets('${id}')"]`)
       if (btn) { btn.textContent = '⏳ Exportando...'; btn.disabled = true }
 
-      const CTC_URL = 'https://script.google.com/macros/s/AKfycbz-aG2ItT4ARAu6sWOloRQVTXkrnhvVlwNtSShU13TKr4p-4102KwFlf2kkgFdgV8WC6g/exec'
+      const CTC_URL = `https://script.google.com/macros/s/AKfycbz-aG2ItT4ARAu6sWOloRQVTXkrnhvVlwNtSShU13TKr4p-4102KwFlf2kkgFdgV8WC6g/exec?action=ctacte&clienteId=${id}`
 
-      try {
-        await fetch(`${CTC_URL}?action=ctacte&clienteId=${id}`, { mode: 'no-cors' })
+      const iframe = document.createElement('iframe')
+      iframe.src = CTC_URL
+      iframe.style.display = 'none'
+      document.body.appendChild(iframe)
+
+      setTimeout(() => {
+        iframe.remove()
         if (btn) { btn.textContent = '✅ Exportado'; btn.disabled = false }
         setTimeout(() => { if (btn) btn.textContent = '📊 Exportar' }, 3000)
         alert('✅ Cuenta corriente exportada. Abrí Google Sheets para verla.')
-      } catch (e) {
-        if (btn) { btn.textContent = '❌ Error'; btn.disabled = false }
-        alert('Error al exportar: ' + e.message)
-      }
-    
+      }, 5000)
+        
       const movimientos = []
 
       // Ventas aprobadas = DEBE
