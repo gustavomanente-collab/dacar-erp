@@ -5,6 +5,8 @@ export function renderNavbar(perfil) {
   const rolLabel   = esGerencia ? '👔 Gerencia' : esAdmin ? '📋 Administrativo' : '🧑‍💼 Vendedor'
 
   const menuItems = `
+  ${esGerencia ? `<button onclick="navigate('dashboard')"
+          class="text-sm text-gray-600 hover:text-green-700 font-medium">Dashboard</button>` : ''}
     <button onclick="navigate('clientes')"
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Clientes</button>
     ${esGerencia || esVendedor ? `
@@ -17,6 +19,10 @@ export function renderNavbar(perfil) {
   `
 
   const menuItemsMobile = `
+  ${esGerencia ? `<button onclick="navigate('dashboard'); toggleMenu()"
+      class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
+      📊 Dashboard
+    </button>` : ''}
     <button onclick="navigate('clientes'); toggleMenu()"
       class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
       👥 Clientes

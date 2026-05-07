@@ -5,6 +5,7 @@ import { renderClientes } from './pages/clientes.js'
 import { renderCotizador } from './pages/cotizador.js'
 import { renderHistorial } from './pages/historial.js'
 import { renderFinanzas } from './pages/finanzas.js'
+import { renderDashboard } from './pages/dashboard.js'
 
 const app = document.getElementById('app')
 let perfilGlobal = null
@@ -59,7 +60,8 @@ async function renderLogin() {
       .single()
 
     perfilGlobal = profile
-    renderApp('clientes')
+    const paginaInicio = profile?.role === 'gerencia' ? 'dashboard' : 'cotizador'
+    renderApp(paginaInicio)
   })
 }
 
@@ -69,7 +71,7 @@ function renderApp(pagina) {
     <div id="contenido"></div>
   `
 
-document.getElementById('btn-logout')?.addEventListener('click', async () => {
+  document.getElementById('btn-logout')?.addEventListener('click', async () => {
     await supabase.auth.signOut()
     perfilGlobal = null
     renderLogin()
@@ -89,19 +91,30 @@ document.getElementById('btn-logout')?.addEventListener('click', async () => {
   document.getElementById('btn-menu-mobile')?.addEventListener('click', () => {
     window.toggleMenu()
   })
+
   window.navigate = (p) => renderApp(p)
 
   const contenido = document.getElementById('contenido')
 
-if (pagina === 'clientes') {
+  if (pagina === 'dashboard') {
+    renderDashboard(contenido)
+  } else if (pagina === 'clientes') {
     renderClientes(contenido)
   } else if (pagina === 'cotizador') {
     renderCotizador(contenido)
-} else if (pagina === 'historial') {
+  } else if (pagina === 'historial') {
     renderHistorial(contenido)
   } else if (pagina === 'finanzas') {
     renderFinanzas(contenido, perfilGlobal)
-    }}
+  } else {
+    // Por defecto según rol
+    if (perfilGlobal?.role === 'gerencia') {
+      renderDashboard(contenido)
+    } else {
+      renderCotizador(contenido)
+    }
+  }
+}
 
 const { data: { session } } = await supabase.auth.getSession()
 if (session) {
@@ -111,7 +124,8 @@ if (session) {
     .eq('id', session.user.id)
     .single()
   perfilGlobal = profile
-  renderApp('clientes')
+  const paginaInicio = profile?.role === 'gerencia' ? 'dashboard' : 'cotizador'
+  renderApp(paginaInicio)
 } else {
   renderLogin()
 }
