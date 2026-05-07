@@ -338,12 +338,14 @@ window.liquidarVentaCompleta = async (cotId, totalFinal, totalNeto) => {
         modal.remove()
         renderPendientes()
       }
-      window.borrarCobroFicha = async (id, cotId) => {
+window.borrarCobroFicha = async (id, cotId) => {
         const clave = prompt('Clave de gerencia:')
         if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
-        if (!confirm('¿Confirmás?')) return
+        if (!confirm('¿Confirmás? Se borrarán también los registros relacionados.')) return
+        await supabase.from('liquidacion_cobros').delete().eq('cobro_id', id)
+        await supabase.from('recibos').delete().eq('cobro_id', id)
         await supabase.from('cobros').delete().eq('id', id)
-        modal.remove()
+                modal.remove()
         abrirFichaVenta(cotId)
       }
     }
@@ -439,14 +441,17 @@ window.imprimirReciboCobro = async (id) => {
       })
     }
 
-    window.borrarCobro = async (id) => {
+window.borrarCobro = async (id) => {
       const clave = prompt('Clave de gerencia:')
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
-      if (!confirm('¿Confirmás?')) return
+      if (!confirm('¿Confirmás? Se borrarán también los registros relacionados.')) return
+
+      // Borrar registros relacionados primero
+      await supabase.from('liquidacion_cobros').delete().eq('cobro_id', id)
+      await supabase.from('recibos').delete().eq('cobro_id', id)
       await supabase.from('cobros').delete().eq('id', id)
       renderCobros()
-    }
-  }
+    }  }
 
   async function renderProveedor() {
     const el = document.getElementById('fin-content')
