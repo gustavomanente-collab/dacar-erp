@@ -14,7 +14,6 @@ const ESTADOS = {
   finalizado:    { label: 'Finalizado',    color: 'bg-green-100 text-green-700' },
   cancelado:     { label: 'Cancelado',     color: 'bg-red-100 text-red-600' }
 }
-console.log('renderProyectos llamado', contenedor)
 export async function renderProyectos(contenedor) {
   contenedor.innerHTML = `
     <div class="p-4 max-w-6xl mx-auto">
