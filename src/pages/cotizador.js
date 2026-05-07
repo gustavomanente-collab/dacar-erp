@@ -189,15 +189,14 @@ recalcular()
 .from('clientes').select('id,nombre,obra,direccion').order('nombre')
 
 contenedor.innerHTML = `
- <div class="p-4 max-w-5xl mx-auto">
-
+<div class="p-3 max-w-5xl mx-auto">
    <!-- ENCABEZADO -->
    <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 overflow-hidden">
      <div class="bg-gray-900 px-5 py-3 flex items-center justify-between">
        <span class="text-white font-black text-lg tracking-wide">DACAR SRL</span>
        <span class="text-gray-400 text-sm">Nueva cotización</span>
      </div>
-     <div class="p-4 grid grid-cols-4 gap-4">
+<div class="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
        <div class="col-span-2">
          <p class="text-xs text-gray-400 mb-1">N° Presupuesto</p>
          <p class="text-3xl font-black text-gray-900">2026-<span id="nro-ppto">${String(nextNum).padStart(3,'0')}</span></p>
@@ -231,7 +230,7 @@ contenedor.innerHTML = `
 
    <!-- MÁRGENES -->
    <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
-     <div class="grid grid-cols-5 gap-3 items-end">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
        <div>
          <label class="block text-xs text-gray-400 mb-1">Margen paneles %</label>
          <input id="mk-pan" type="number" value="30" min="0"
@@ -258,7 +257,8 @@ contenedor.innerHTML = `
 
    <!-- TABLA -->
    <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 overflow-hidden">
-     <table class="w-full text-sm" id="tbl-items">
+<div class="overflow-x-auto">
+<table class="w-full text-sm min-w-[600px]" id="tbl-items">
        <thead class="bg-gray-900 text-white">
          <tr>
            <th class="px-3 py-2 text-left font-medium text-xs w-1/3">DESCRIPCIÓN</th>
@@ -304,8 +304,7 @@ contenedor.innerHTML = `
    </div>
 
    <!-- TOTALES + COMISIÓN -->
-   <div class="grid grid-cols-2 gap-4 mb-4">
-
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
      <!-- Comisión (no se imprime) -->
      <div class="bg-purple-50 border border-purple-200 rounded-xl p-4">
        <p class="text-xs font-semibold text-purple-600 mb-3">🤝 Comisión vendedor (no se imprime)</p>
@@ -369,7 +368,7 @@ contenedor.innerHTML = `
 
    <!-- CONDICIONES -->
    <div class="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-     <div class="grid grid-cols-2 gap-3">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
        <div>
          <label class="block text-xs text-gray-400 mb-1">Condición de pago</label>
          <input id="cond-pago" type="text" value="50% Anticipo - 50% contra entrega"
@@ -384,7 +383,7 @@ contenedor.innerHTML = `
    </div>
 
    <!-- ACCIONES -->
-   <div class="flex gap-3 pb-8">
+<div class="flex flex-col md:flex-row gap-3 pb-8">
      <button id="btn-guardar"
        class="flex-1 bg-green-700 hover:bg-green-900 text-white font-bold py-3 rounded-xl">
        💾 Guardar cotización
