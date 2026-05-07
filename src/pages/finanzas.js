@@ -588,7 +588,7 @@ async function renderComisiones() {
     const comisionesCalc = cobrosConCot.map(c => {
       const totalFinal = c.cotizaciones.total_final || 0
       const totalNeto  = c.cotizaciones.total_neto || 0
-const totalBase  = cot?.total_final || 0
+      const totalBase  = c.cotizaciones?.total_final || 0
       const utilidad   = totalBase - totalNeto
       const pctUtil    = totalBase > 0 ? utilidad / totalBase : 0
       const montoBase  = Math.min(c.monto_usd, totalBase)
