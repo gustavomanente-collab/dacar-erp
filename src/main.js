@@ -97,11 +97,11 @@ function renderApp(pagina) {
 
   const contenido = document.getElementById('contenido')
 
-  if (pagina === 'dashboard') {
+if (pagina === 'dashboard') {
     renderDashboard(contenido)
-    } else if (pagina === 'proyectos') {
+  } else if (pagina === 'proyectos') {
     renderProyectos(contenido)
-  } else if (pagina === 'clientes') {
+    } else if (pagina === 'clientes') {
     renderClientes(contenido)
   } else if (pagina === 'cotizador') {
     renderCotizador(contenido)
