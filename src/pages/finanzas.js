@@ -6,7 +6,7 @@ export async function renderFinanzas(contenedor, perfil) {
   const esAdmin    = perfil?.role === 'administrativo'
   const esVendedor = perfil?.role === 'vendedor'
 
-  contenedor.innerHTML = `
+contenedor.innerHTML = `
     <div class="p-4 max-w-5xl mx-auto">
       <div class="flex gap-2 mb-6 border-b border-gray-200 flex-wrap">
         <button onclick="tabFin('pendientes')" id="tab-pendientes"
@@ -24,12 +24,12 @@ export async function renderFinanzas(contenedor, perfil) {
         </button>` : ''}
         ${esGerencia ? `
         <button onclick="tabFin('comisiones')" id="tab-comisiones"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          🤝 Comisiones
+        </button>
         <button onclick="tabFin('calce')" id="tab-calce"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           ⚖️ Calce
-        </button>
-          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
-          🤝 Comisiones
         </button>` : ''}
         ${esGerencia || esAdmin ? `
         <button onclick="window.abrirSimuladorFlujo()"
@@ -40,7 +40,6 @@ export async function renderFinanzas(contenedor, perfil) {
       <div id="fin-content"></div>
     </div>
   `
-
   window.tabFin = (tab) => {
     ;['pendientes','cobros','proveedor','comisiones'].forEach(t => {
       const btn = document.getElementById(`tab-${t}`)
