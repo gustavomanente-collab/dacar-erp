@@ -51,23 +51,27 @@ export async function renderProyectos(contenedor) {
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           💰 Costos de hora
         </button>
+        <button onclick="tabProy('catalogo')" id="tab-catalogo"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          📚 Catálogo
+        </button>
       </div>
       <div id="proy-content"></div>
     </div>
   `
 
   window.tabProy = (tab) => {
-    ;['proyectos','operarios','costos'].forEach(t => {
-      const btn = document.getElementById(`tab-${t}`)
+;['proyectos','operarios','costos','catalogo'].forEach(t => {
+          const btn = document.getElementById(`tab-${t}`)
       if (btn) btn.className = t === tab
         ? 'px-4 py-2 text-sm font-medium border-b-2 border-green-700 text-green-700'
         : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700'
     })
     if (tab === 'proyectos') renderListaProyectos()
     if (tab === 'operarios') renderOperarios()
-    if (tab === 'costos')    renderCostos()
+if (tab === 'costos')    renderCostos()
+    if (tab === 'catalogo')  renderCatalogo()
   }
-
   // ════════════════════════════════════════════════════════
   // LISTA DE PROYECTOS
   // ════════════════════════════════════════════════════════
@@ -971,7 +975,201 @@ return `
       }
     }
   }
+// ════════════════════════════════════════════════════════
+  // CATALOGO DE ITEMS
+  // ════════════════════════════════════════════════════════
+  async function renderCatalogo() {
+    const el = document.getElementById('proy-content')
+    const { data: items } = await supabase
+      .from('catalogo_items').select('*')
+      .order('categoria').order('subcategoria').order('descripcion')
 
+    const porCat = {}
+    ;(items || []).forEach(it => {
+      if (!porCat[it.categoria]) porCat[it.categoria] = {}
+      if (!porCat[it.categoria][it.subcategoria]) porCat[it.categoria][it.subcategoria] = []
+      porCat[it.categoria][it.subcategoria].push(it)
+    })
+
+    el.innerHTML = `
+      <div class="flex justify-between items-center mb-4">
+        <div>
+          <h3 class="font-semibold text-gray-700">Catálogo de items</h3>
+          <p class="text-xs text-gray-400">Items precargados para usar al armar análisis de precios</p>
+        </div>
+        <button onclick="abrirNuevoItemCatalogo()"
+          class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+          + Nuevo item
+        </button>
+      </div>
+
+      <div class="mb-4">
+        <input id="busca-cat" type="text" placeholder="🔍 Buscar item..."
+          class="w-full rounded-lg border-gray-300 text-sm" />
+      </div>
+
+      ${Object.entries(porCat).map(([cat, subs]) => {
+        const c = CATEGORIAS_ITEM[cat]
+        if (!c) return ''
+        return `
+          <div class="mb-4">
+            <div class="${c.headerBg} ${c.headerText} px-4 py-2 rounded-t-lg font-semibold text-sm flex items-center gap-2">
+              ${c.icon} ${c.label}
+            </div>
+            <div class="bg-white border border-gray-200 rounded-b-lg overflow-hidden">
+              ${Object.entries(subs).map(([sub, lista]) => `
+                <div>
+                  <div class="bg-gray-50 px-4 py-1.5 text-xs font-semibold text-gray-600 border-t border-gray-100">
+                    ${sub} <span class="text-gray-400 font-normal">(${lista.length})</span>
+                  </div>
+                  <table class="w-full text-xs cat-tabla">
+                    <tbody>
+                      ${lista.map((it, i) => `
+                        <tr class="cat-row border-t border-gray-100 ${i%2===0?'bg-white':'bg-gray-50'}"
+                          data-search="${(it.descripcion+' '+it.subcategoria+' '+(it.proveedor||'')).toLowerCase()}">
+                          <td class="px-4 py-1.5 w-1/2">
+                            <input type="text" value="${escapeHtml(it.descripcion)}"
+                              class="w-full bg-transparent border-0 text-xs"
+                              onblur="actualizarCatItem('${it.id}','descripcion',this.value)" />
+                          </td>
+                          <td class="px-2 py-1.5 w-20 text-center">
+                            <select class="bg-transparent border-0 text-xs"
+                              onchange="actualizarCatItem('${it.id}','unidad',this.value)">
+                              ${UNIDADES.map(u => `<option value="${u}" ${it.unidad===u?'selected':''}>${u}</option>`).join('')}
+                            </select>
+                          </td>
+                          <td class="px-2 py-1.5 w-32 text-right">
+                            <input type="text" value="${formatearNumero(it.precio_unitario)}"
+                              class="w-full bg-transparent border-0 text-xs text-right input-numero"
+                              data-campo="precio_unitario" data-id="${it.id}"
+                              data-tabla="catalogo_items" />
+                          </td>
+                          <td class="px-2 py-1.5 w-32">
+                            <input type="text" value="${escapeHtml(it.proveedor||'')}"
+                              placeholder="Proveedor"
+                              class="w-full bg-transparent border-0 text-xs"
+                              onblur="actualizarCatItem('${it.id}','proveedor',this.value)" />
+                          </td>
+                          <td class="px-2 py-1.5 w-8 text-center">
+                            <button onclick="borrarCatItem('${it.id}')"
+                              class="text-red-400 hover:text-red-600 text-xs">✕</button>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `
+      }).join('')}
+    `
+
+    // Bind inputs de números
+    bindInputsNumericos()
+
+    // Buscador
+    document.getElementById('busca-cat').addEventListener('input', e => {
+      const txt = e.target.value.toLowerCase()
+      document.querySelectorAll('.cat-row').forEach(row => {
+        row.style.display = !txt || row.dataset.search.includes(txt) ? '' : 'none'
+      })
+    })
+
+    window.actualizarCatItem = async (id, campo, valor) => {
+      await supabase.from('catalogo_items').update({ [campo]: valor }).eq('id', id)
+    }
+
+    window.borrarCatItem = async (id) => {
+      if (!confirm('¿Borrar este item del catálogo?')) return
+      await supabase.from('catalogo_items').delete().eq('id', id)
+      renderCatalogo()
+    }
+
+    window.abrirNuevoItemCatalogo = () => {
+      const modal = crearModal(`
+        <h3 class="text-lg font-bold mb-4">Nuevo item de catálogo</h3>
+        <div class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-500">Categoría *</label>
+              <select id="ci-cat" class="w-full rounded-lg border-gray-300 text-sm">
+                <option value="materiales">Materiales</option>
+                <option value="equipos">Equipos</option>
+                <option value="subcontratos">Subcontratos</option>
+                <option value="gastos_grales">Gastos generales</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500">Subcategoría *</label>
+              <input id="ci-sub" type="text" placeholder="Ej: Estructurales"
+                class="w-full rounded-lg border-gray-300 text-sm" list="lista-subs" />
+              <datalist id="lista-subs">
+                ${[...new Set((items||[]).map(i => i.subcategoria))].map(s => `<option>${s}</option>`).join('')}
+              </datalist>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-500">Descripción *</label>
+            <input id="ci-desc" type="text" placeholder="Ej: Caño estructural 100x100x3.2"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs text-gray-500">Unidad</label>
+              <select id="ci-unidad" class="w-full rounded-lg border-gray-300 text-sm">
+                ${UNIDADES.map(u => `<option>${u}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500">Precio unit. $</label>
+              <input id="ci-precio" type="text" value="0"
+                class="w-full rounded-lg border-gray-300 text-sm input-numero-modal text-right" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500">Proveedor</label>
+              <input id="ci-prov" type="text" class="w-full rounded-lg border-gray-300 text-sm" />
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-5">
+          <button onclick="this.closest('[data-modal]').remove()"
+            class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+          <button onclick="guardarItemCatalogo()"
+            class="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-bold">Guardar</button>
+        </div>
+      `, 'max-w-md')
+
+      // Bind formato número en el modal
+      const inp = modal.querySelector('.input-numero-modal')
+      if (inp) {
+        inp.addEventListener('input', e => {
+          const cursor = e.target.selectionStart
+          const sinFormato = e.target.value.replace(/\./g, '')
+          const num = parseInt(sinFormato) || 0
+          e.target.value = formatearNumero(num)
+        })
+      }
+
+      window.guardarItemCatalogo = async () => {
+        const sub = document.getElementById('ci-sub').value.trim()
+        const desc = document.getElementById('ci-desc').value.trim()
+        if (!sub || !desc) { alert('Completá subcategoría y descripción'); return }
+        const precio = parseFloat(document.getElementById('ci-precio').value.replace(/\./g, '')) || 0
+        await supabase.from('catalogo_items').insert({
+          categoria: document.getElementById('ci-cat').value,
+          subcategoria: sub,
+          descripcion: desc,
+          unidad: document.getElementById('ci-unidad').value,
+          precio_unitario: precio,
+          proveedor: document.getElementById('ci-prov').value
+        })
+        modal.remove()
+        renderCatalogo()
+      }
+    }
+  }
   renderListaProyectos()
 }
 
@@ -990,4 +1188,31 @@ function crearModal(html, maxWidth = 'max-w-2xl') {
 
 function escapeHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  function formatearNumero(n) {
+  return Math.round(n || 0).toLocaleString('es-AR').replace(/,/g, '.')
+}
+
+function bindInputsNumericos() {
+  document.querySelectorAll('.input-numero').forEach(inp => {
+    if (inp.dataset.bound) return
+    inp.dataset.bound = '1'
+
+    inp.addEventListener('input', e => {
+      const sinFormato = e.target.value.replace(/\./g, '').replace(/[^0-9]/g, '')
+      const num = parseInt(sinFormato) || 0
+      e.target.value = formatearNumero(num)
+    })
+
+    inp.addEventListener('blur', async e => {
+      const num = parseInt(e.target.value.replace(/\./g, '')) || 0
+      const id = e.target.dataset.id
+      const campo = e.target.dataset.campo
+      const tabla = e.target.dataset.tabla
+      if (id && campo && tabla) {
+        const { supabase: sb } = await import('../supabase.js')
+        await sb.from(tabla).update({ [campo]: num }).eq('id', id)
+      }
+    })
+  })
+}
 }
