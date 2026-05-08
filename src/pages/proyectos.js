@@ -1185,10 +1185,11 @@ function crearModal(html, maxWidth = 'max-w-2xl') {
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
   return modal
 }
-
 function escapeHtml(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
-  function formatearNumero(n) {
+}
+
+function formatearNumero(n) {
   return Math.round(n || 0).toLocaleString('es-AR').replace(/,/g, '.')
 }
 
@@ -1214,5 +1215,4 @@ function bindInputsNumericos() {
       }
     })
   })
-}
 }
