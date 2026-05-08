@@ -643,10 +643,30 @@ return `
       await window.recargarFicha()
     }
 
-    window.agregarItem = async (categoria) => {
+window.agregarItem = async (categoria) => {
       const cat = CATEGORIAS_ITEM[categoria]
+
+      // Cargar catalogo de esa categoría
+      const { data: catalogo } = await supabase
+        .from('catalogo_items')
+        .select('*')
+        .eq('categoria', categoria)
+        .eq('activo', true)
+        .order('subcategoria').order('descripcion')
+
       const modal = crearModal(`
         <h3 class="text-lg font-bold mb-4">${cat.icon} Agregar ${cat.label}</h3>
+
+        <!-- Buscador del catálogo -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+          <label class="block text-xs font-semibold text-blue-700 mb-2">📚 Buscar en catálogo</label>
+          <input id="ai-busca" type="text" placeholder="🔍 Escribí para buscar (ej: caño 100, planchuela, andamio...)"
+            class="w-full rounded-lg border-blue-300 text-sm" autocomplete="off" />
+          <div id="ai-resultados" class="mt-2 max-h-60 overflow-y-auto bg-white border border-blue-200 rounded-lg hidden"></div>
+        </div>
+
+        <p class="text-xs text-gray-400 text-center my-2">— o cargar manualmente —</p>
+
         <div class="space-y-3">
           <div>
             <label class="block text-xs text-gray-500 mb-1">Descripción *</label>
@@ -667,8 +687,8 @@ return `
             </div>
             <div>
               <label class="block text-xs text-gray-500 mb-1">Precio unit. $</label>
-              <input id="ai-precio" type="number" step="0.01" value="0"
-                class="w-full rounded-lg border-gray-300 text-sm" />
+              <input id="ai-precio" type="text" value="0"
+                class="w-full rounded-lg border-gray-300 text-sm text-right input-numero-modal" />
             </div>
           </div>
           <div>
@@ -679,101 +699,101 @@ return `
         <div class="flex gap-3 mt-5">
           <button onclick="this.closest('[data-modal]').remove()"
             class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
-            <button onclick="confirmarAgregarItem('${categoria}')"
-            class="flex-1 ${cat.btnBg} text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+          <button onclick="confirmarAgregarItem('${categoria}')"
+            class="flex-1 ${cat.btnBg} text-white py-2 rounded-lg text-sm font-bold">Agregar al proyecto</button>
         </div>
       `, 'max-w-md')
+
+      // Buscador en el catálogo
+      const inpBusca   = document.getElementById('ai-busca')
+      const dropResult = document.getElementById('ai-resultados')
+
+      const renderResultados = (txt) => {
+        const filtrados = (catalogo || []).filter(it => {
+          if (!txt) return true
+          const t = txt.toLowerCase()
+          return it.descripcion.toLowerCase().includes(t) ||
+                 it.subcategoria.toLowerCase().includes(t) ||
+                 (it.proveedor||'').toLowerCase().includes(t)
+        }).slice(0, 30)
+
+        if (!filtrados.length) {
+          dropResult.innerHTML = `<p class="text-gray-400 text-xs text-center py-3">Sin resultados en catálogo</p>`
+          dropResult.classList.remove('hidden')
+          return
+        }
+
+        // Agrupar por subcategoría
+        const grupos = {}
+        filtrados.forEach(it => {
+          if (!grupos[it.subcategoria]) grupos[it.subcategoria] = []
+          grupos[it.subcategoria].push(it)
+        })
+
+        dropResult.innerHTML = Object.entries(grupos).map(([sub, lista]) => `
+          <div class="bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600 sticky top-0">${sub}</div>
+          ${lista.map(it => `
+            <div onclick="seleccionarItemCatalogo('${it.id}')"
+              class="px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <p class="font-medium text-gray-800">${escapeHtml(it.descripcion)}</p>
+                ${it.proveedor ? `<p class="text-gray-400 text-[10px]">${escapeHtml(it.proveedor)}</p>` : ''}
+              </div>
+              <div class="text-right">
+                <p class="font-bold text-blue-700">${fmt(it.precio_unitario)}</p>
+                <p class="text-gray-400 text-[10px]">x ${it.unidad}</p>
+              </div>
+            </div>
+          `).join('')}
+        `).join('')
+
+        dropResult.classList.remove('hidden')
+      }
+
+      inpBusca.addEventListener('focus', () => renderResultados(''))
+      inpBusca.addEventListener('input', e => renderResultados(e.target.value))
+
+      window.seleccionarItemCatalogo = (id) => {
+        const it = catalogo.find(c => c.id === id)
+        if (!it) return
+        document.getElementById('ai-desc').value    = it.descripcion
+        document.getElementById('ai-unidad').value  = it.unidad
+        document.getElementById('ai-precio').value  = formatearNumero(it.precio_unitario)
+        if (it.notas) document.getElementById('ai-notas').value = it.notas
+        dropResult.classList.add('hidden')
+        inpBusca.value = ''
+        document.getElementById('ai-cant').focus()
+      }
+
+      // Formato de número en el input de precio manual
+      const inpPrecio = modal.querySelector('.input-numero-modal')
+      if (inpPrecio) {
+        inpPrecio.addEventListener('input', e => {
+          const sinFormato = e.target.value.replace(/\./g, '').replace(/[^0-9]/g, '')
+          const num = parseInt(sinFormato) || 0
+          e.target.value = formatearNumero(num)
+        })
+      }
 
       window.confirmarAgregarItem = async (cat) => {
         const desc = document.getElementById('ai-desc').value.trim()
         if (!desc) { alert('Ingresá la descripción'); return }
+        const precio = parseFloat(document.getElementById('ai-precio').value.replace(/\./g, '')) || 0
+
         await supabase.from('proyecto_items').insert({
           proyecto_id: proyectoId,
           categoria: cat,
           descripcion: desc,
           cantidad: parseFloat(document.getElementById('ai-cant').value) || 1,
           unidad: document.getElementById('ai-unidad').value,
-          precio_unitario: parseFloat(document.getElementById('ai-precio').value) || 0,
+          precio_unitario: precio,
           notas: document.getElementById('ai-notas').value
         })
         modal.remove()
         await window.recargarFicha()
       }
     }
-
-    window.agregarMO = () => {
-      const modal = crearModal(`
-        <h3 class="text-lg font-bold mb-4">👷 Agregar mano de obra</h3>
-        <div class="space-y-3">
-          <div>
-            <label class="block text-xs text-gray-500 mb-1">Operario</label>
-            <select id="mo-op" class="w-full rounded-lg border-gray-300 text-sm" onchange="actualizarCostoMO()">
-              <option value="">-- Seleccionar --</option>
-              ${data.operarios.map(o => `<option value="${o.id}" data-cat="${o.categoria}" data-gremio="${o.gremio}">${o.apellido}, ${o.nombre} — ${CATEGORIAS_OP[o.categoria]} (${o.gremio})</option>`).join('')}
-            </select>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs text-gray-500 mb-1">Días</label>
-              <input id="mo-dias" type="number" step="0.5" value="22" oninput="calcularTotalMO()"
-                class="w-full rounded-lg border-gray-300 text-sm" />
-            </div>
-            <div>
-              <label class="block text-xs text-gray-500 mb-1">Horas/día</label>
-              <input id="mo-hs" type="number" step="0.5" value="8" oninput="calcularTotalMO()"
-                class="w-full rounded-lg border-gray-300 text-sm" />
-            </div>
-          </div>
-          <div class="bg-green-50 rounded-lg p-3 text-xs text-green-700">
-            <p>Costo hora: <span id="mo-costo">--</span></p>
-            <p class="mt-1 font-bold text-base">Total: <span id="mo-total">--</span></p>
-          </div>
-        </div>
-        <div class="flex gap-3 mt-5">
-          <button onclick="this.closest('[data-modal]').remove()"
-            class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
-          <button onclick="confirmarMO()"
-            class="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
-        </div>
-      `, 'max-w-md')
-
-      window.actualizarCostoMO = () => {
-        const sel = document.getElementById('mo-op')
-        const opt = sel.options[sel.selectedIndex]
-        const costo = data.costosHora.find(c => c.categoria === opt.dataset.cat && c.gremio === opt.dataset.gremio)
-        document.getElementById('mo-costo').textContent = costo ? fmt(costo.costo_hora) + '/hora' : 'Sin datos'
-        calcularTotalMO()
-      }
-
-      window.calcularTotalMO = () => {
-        const sel = document.getElementById('mo-op')
-        const opt = sel.options[sel.selectedIndex]
-        const costo = data.costosHora.find(c => c.categoria === opt?.dataset?.cat && c.gremio === opt?.dataset?.gremio)
-        const dias = parseFloat(document.getElementById('mo-dias').value) || 0
-        const hs = parseFloat(document.getElementById('mo-hs').value) || 0
-        document.getElementById('mo-total').textContent = fmt(dias * hs * (costo?.costo_hora || 0))
-      }
-
-      window.confirmarMO = async () => {
-        const sel = document.getElementById('mo-op')
-        if (!sel.value) { alert('Seleccioná un operario'); return }
-        const opt = sel.options[sel.selectedIndex]
-        const costo = data.costosHora.find(c => c.categoria === opt.dataset.cat && c.gremio === opt.dataset.gremio)
-        await supabase.from('proyecto_mo_presupuesto').insert({
-          proyecto_id: proyectoId,
-          operario_id: sel.value,
-          categoria: opt.dataset.cat,
-          gremio: opt.dataset.gremio,
-          dias: parseFloat(document.getElementById('mo-dias').value) || 0,
-          horas_dia: parseFloat(document.getElementById('mo-hs').value) || 0,
-          costo_hora: costo?.costo_hora || 0
-        })
-        modal.remove()
-        await window.recargarFicha()
-      }
-    }
   }
-
   // ════════════════════════════════════════════════════════
   // REAL EJECUTADO
   // ════════════════════════════════════════════════════════
