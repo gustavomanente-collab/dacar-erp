@@ -841,14 +841,14 @@ window.confirmarAgregarItem = async (cat) => {
           precio_unitario: precio,
           moneda: document.getElementById('ai-moneda').value,
           notas: document.getElementById('ai-notas').value
-        })
+})
         modal.remove()
         await window.recargarFicha()
       }
     }
-  }
-  window.agregarMO = () => {
-      const modal = crearModal(`
+
+    window.agregarMO = () => {
+              const modal = crearModal(`
         <h3 class="text-lg font-bold mb-4">👷 Agregar mano de obra</h3>
         <div class="space-y-3">
           <div>
@@ -1366,4 +1366,5 @@ function bindInputsNumericos() {
       }
     })
   })
+}
 }
