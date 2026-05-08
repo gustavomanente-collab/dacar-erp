@@ -997,11 +997,18 @@ return `
           <h3 class="font-semibold text-gray-700">Catálogo de items</h3>
           <p class="text-xs text-gray-400">Items precargados para usar al armar análisis de precios</p>
         </div>
-        <button onclick="abrirNuevoItemCatalogo()"
-          class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
-          + Nuevo item
-        </button>
-      </div>
+<div class="flex gap-2">
+          <a href="https://docs.google.com/spreadsheets/d/1UCHkxdliJAkL5yT9bo_70V0idTgEo_5x_PLiBSxiLxM/edit"
+            target="_blank"
+            class="bg-blue-600 hover:bg-blue-800 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📊 Editar en Sheets
+          </a>
+          <button onclick="abrirNuevoItemCatalogo()"
+            class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            + Nuevo item
+          </button>
+        </div>
+              </div>
 
       <div class="mb-4">
         <input id="busca-cat" type="text" placeholder="🔍 Buscar item..."
