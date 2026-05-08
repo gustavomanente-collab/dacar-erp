@@ -847,6 +847,77 @@ window.confirmarAgregarItem = async (cat) => {
       }
     }
   }
+  window.agregarMO = () => {
+      const modal = crearModal(`
+        <h3 class="text-lg font-bold mb-4">👷 Agregar mano de obra</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Operario</label>
+            <select id="mo-op" class="w-full rounded-lg border-gray-300 text-sm" onchange="actualizarCostoMO()">
+              <option value="">-- Seleccionar --</option>
+              ${data.operarios.map(o => `<option value="${o.id}" data-cat="${o.categoria}" data-gremio="${o.gremio}">${o.apellido}, ${o.nombre} — ${CATEGORIAS_OP[o.categoria]} (${o.gremio})</option>`).join('')}
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Días</label>
+              <input id="mo-dias" type="number" step="0.5" value="22" oninput="calcularTotalMO()"
+                class="w-full rounded-lg border-gray-300 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Horas/día</label>
+              <input id="mo-hs" type="number" step="0.5" value="8" oninput="calcularTotalMO()"
+                class="w-full rounded-lg border-gray-300 text-sm" />
+            </div>
+          </div>
+          <div class="bg-green-50 rounded-lg p-3 text-xs text-green-700">
+            <p>Costo hora: <span id="mo-costo">--</span></p>
+            <p class="mt-1 font-bold text-base">Total: <span id="mo-total">--</span></p>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-5">
+          <button onclick="this.closest('[data-modal]').remove()"
+            class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+          <button onclick="confirmarMO()"
+            class="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+        </div>
+      `, 'max-w-md')
+
+      window.actualizarCostoMO = () => {
+        const sel = document.getElementById('mo-op')
+        const opt = sel.options[sel.selectedIndex]
+        const costo = data.costosHora.find(c => c.categoria === opt.dataset.cat && c.gremio === opt.dataset.gremio)
+        document.getElementById('mo-costo').textContent = costo ? fmt(costo.costo_hora) + '/hora' : 'Sin datos'
+        calcularTotalMO()
+      }
+
+      window.calcularTotalMO = () => {
+        const sel = document.getElementById('mo-op')
+        const opt = sel.options[sel.selectedIndex]
+        const costo = data.costosHora.find(c => c.categoria === opt?.dataset?.cat && c.gremio === opt?.dataset?.gremio)
+        const dias = parseFloat(document.getElementById('mo-dias').value) || 0
+        const hs = parseFloat(document.getElementById('mo-hs').value) || 0
+        document.getElementById('mo-total').textContent = fmt(dias * hs * (costo?.costo_hora || 0))
+      }
+
+      window.confirmarMO = async () => {
+        const sel = document.getElementById('mo-op')
+        if (!sel.value) { alert('Seleccioná un operario'); return }
+        const opt = sel.options[sel.selectedIndex]
+        const costo = data.costosHora.find(c => c.categoria === opt.dataset.cat && c.gremio === opt.dataset.gremio)
+        await supabase.from('proyecto_mo_presupuesto').insert({
+          proyecto_id: proyectoId,
+          operario_id: sel.value,
+          categoria: opt.dataset.cat,
+          gremio: opt.dataset.gremio,
+          dias: parseFloat(document.getElementById('mo-dias').value) || 0,
+          horas_dia: parseFloat(document.getElementById('mo-hs').value) || 0,
+          costo_hora: costo?.costo_hora || 0
+        })
+        modal.remove()
+        await window.recargarFicha()
+      }
+    }
   // ════════════════════════════════════════════════════════
   // REAL EJECUTADO
   // ════════════════════════════════════════════════════════
