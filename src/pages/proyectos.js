@@ -32,7 +32,7 @@ const ESTADOS = {
 }
 
 const fmt = (n) => '$ ' + (Math.round(n || 0)).toLocaleString('es-AR')
-const fmtUsd = (n) => 'U$S ' + (n || 0).toFixed(2)
+const fmtUsd = (n) => 'U$S ' + (n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtPct = (n) => (n || 0).toFixed(1) + '%'
 
 export async function renderProyectos(contenedor) {
@@ -258,28 +258,43 @@ if (tab === 'costos')    renderCostos()
     return { proyecto, items: items||[], itemsReal: itemsReal||[], moPresup: moPresup||[], moReal: moReal||[], costosHora: costosHora||[], operarios: operarios||[] }
   }
 
-  function calcularResumen(data) {
+function calcularResumen(data) {
     const { items, moPresup, proyecto } = data
+    const tc = proyecto.tc_dolar || 1150
 
-    const subMateriales   = items.filter(i => i.categoria === 'materiales').reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
-    const subEquipos      = items.filter(i => i.categoria === 'equipos').reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
-    const subSubcontratos = items.filter(i => i.categoria === 'subcontratos').reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
-    const subGastos       = items.filter(i => i.categoria === 'gastos_grales').reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
-    const subMO           = moPresup.reduce((s,m) => s + (m.dias * m.horas_dia * m.costo_hora), 0)
+    // Convertir cada item a USD según su moneda
+    const itemAUsd = (i) => {
+      const total = i.cantidad * i.precio_unitario
+      return i.moneda === 'ARS' ? total / tc : total
+    }
 
+    const subMateriales   = items.filter(i => i.categoria === 'materiales').reduce((s,i) => s + itemAUsd(i), 0)
+    const subEquipos      = items.filter(i => i.categoria === 'equipos').reduce((s,i) => s + itemAUsd(i), 0)
+    const subSubcontratos = items.filter(i => i.categoria === 'subcontratos').reduce((s,i) => s + itemAUsd(i), 0)
+    const subGastos       = items.filter(i => i.categoria === 'gastos_grales').reduce((s,i) => s + itemAUsd(i), 0)
+
+    // MO: pesos → USD
+    const subMOArs = moPresup.reduce((s,m) => s + (m.dias * m.horas_dia * m.costo_hora), 0)
+    const subMO    = subMOArs / tc
+
+    // Todo en USD
     const costoDirecto = subMateriales + subEquipos + subSubcontratos + subGastos + subMO
     const imprevistos  = costoDirecto * (proyecto.pct_imprevistos / 100)
     const costoTotal   = costoDirecto + imprevistos
     const utilidad     = costoTotal * (proyecto.pct_utilidad / 100)
     const precioVenta  = costoTotal + utilidad
-    const precioVentaUsd = precioVenta / (proyecto.tc_dolar || 1150)
+
+    // Conversión a pesos (al final, para mostrar)
+    const costoDirectoArs = costoDirecto * tc
+    const costoTotalArs   = costoTotal * tc
+    const precioVentaArs  = precioVenta * tc
 
     return {
-      subMateriales, subEquipos, subSubcontratos, subGastos, subMO,
-      costoDirecto, imprevistos, costoTotal, utilidad, precioVenta, precioVentaUsd
+      subMateriales, subEquipos, subSubcontratos, subGastos, subMO, subMOArs,
+      costoDirecto, imprevistos, costoTotal, utilidad, precioVenta,
+      costoDirectoArs, costoTotalArs, precioVentaArs, tc
     }
   }
-
   function renderFichaContenido(data) {
     const { proyecto } = data
     const r = calcularResumen(data)
@@ -365,35 +380,42 @@ if (tab === 'costos')    renderCostos()
     const { proyecto, items, moPresup } = data
     const r = calcularResumen(data)
 
-    const seccionItems = (categoria) => {
+const seccionItems = (categoria) => {
       const cat = CATEGORIAS_ITEM[categoria]
       const lista = items.filter(i => i.categoria === categoria)
-      const subtotal = lista.reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
+      const tc = proyecto.tc_dolar || 1150
+      const subtotal = lista.reduce((s,i) => {
+        const t = i.cantidad * i.precio_unitario
+        return s + (i.moneda === 'ARS' ? t / tc : t)
+      }, 0)
       const pct = r.costoDirecto > 0 ? (subtotal / r.costoDirecto * 100) : 0
-
 return `
         <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3">
           <div class="${cat.headerBg} border-b ${cat.headerBorder} px-4 py-2 flex items-center justify-between">
             <h4 class="font-semibold ${cat.headerText} text-sm">${cat.icon} ${cat.label}</h4>
             <div class="flex items-center gap-3">
               <span class="text-xs ${cat.headerSub}">${fmtPct(pct)} del costo</span>
-              <span class="font-bold ${cat.headerText} text-sm">${fmt(subtotal)}</span>
+              <span class="font-bold ${cat.headerText} text-sm">${fmtUsd(subtotal)}</span>
               <button onclick="agregarItem('${categoria}')"
                 class="${cat.btnBg} text-white text-xs px-2 py-1 rounded font-medium">+ Agregar</button>
             </div>
           </div>
                     ${lista.length ? `
-            <table class="w-full text-xs">
+<table class="w-full text-xs">
               <thead><tr class="bg-gray-50 text-gray-500">
                 <th class="px-3 py-1.5 text-left">Descripción</th>
-                <th class="px-2 py-1.5 text-center w-20">Cant.</th>
-                <th class="px-2 py-1.5 text-center w-20">Unidad</th>
-                <th class="px-2 py-1.5 text-right w-28">P. Unit. $</th>
-                <th class="px-2 py-1.5 text-right w-28">Subtotal $</th>
+                <th class="px-2 py-1.5 text-center w-16">Cant.</th>
+                <th class="px-2 py-1.5 text-center w-16">Unidad</th>
+                <th class="px-2 py-1.5 text-right w-28">P. Unit.</th>
+                <th class="px-2 py-1.5 text-center w-16">Mon.</th>
+                <th class="px-2 py-1.5 text-right w-32">Subtotal U$S</th>
                 <th class="px-2 py-1.5 w-8"></th>
               </tr></thead>
               <tbody>
-                ${lista.map((it, i) => `
+                ${lista.map((it, i) => {
+                  const subtotalLinea = it.cantidad * it.precio_unitario
+                  const subtotalUsd   = it.moneda === 'ARS' ? subtotalLinea / (proyecto.tc_dolar || 1150) : subtotalLinea
+                  return `
                   <tr class="border-t border-gray-100 ${i%2===0?'bg-white':'bg-gray-50'}">
                     <td class="px-3 py-1">
                       <input type="text" value="${escapeHtml(it.descripcion)}"
@@ -416,32 +438,42 @@ return `
                         class="w-full bg-transparent border-0 text-xs text-right"
                         onblur="actualizarItem('${it.id}', 'precio_unitario', this.value)" />
                     </td>
-                    <td class="px-2 py-1 text-right font-medium">${fmt(it.cantidad * it.precio_unitario)}</td>
+                    <td class="px-2 py-1">
+                      <select class="w-full bg-transparent border-0 text-xs text-center"
+                        onchange="actualizarItem('${it.id}', 'moneda', this.value)">
+                        <option value="USD" ${it.moneda==='USD'?'selected':''}>U$S</option>
+                        <option value="ARS" ${it.moneda==='ARS'?'selected':''}>$</option>
+                      </select>
+                    </td>
+                    <td class="px-2 py-1 text-right font-medium">${fmtUsd(subtotalUsd)}</td>
                     <td class="px-2 py-1 text-center">
                       <button onclick="borrarItem('${it.id}')" class="text-red-400 hover:text-red-600">✕</button>
                     </td>
                   </tr>
-                `).join('')}
+                `}).join('')}
               </tbody>
             </table>
-          ` : `<p class="text-gray-400 text-xs text-center py-3">Sin ${cat.label.toLowerCase()} cargados.</p>`}
+                      ` : `<p class="text-gray-400 text-xs text-center py-3">Sin ${cat.label.toLowerCase()} cargados.</p>`}
         </div>
       `
     }
 
-    // MO
+// MO
     const seccionMO = `
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3">
         <div class="bg-green-50 border-b border-green-100 px-4 py-2 flex items-center justify-between">
           <h4 class="font-semibold text-green-700 text-sm">👷 Mano de obra</h4>
           <div class="flex items-center gap-3">
             <span class="text-xs text-green-600">${fmtPct(r.costoDirecto > 0 ? r.subMO/r.costoDirecto*100 : 0)} del costo</span>
-            <span class="font-bold text-green-700 text-sm">${fmt(r.subMO)}</span>
+            <div class="text-right">
+              <span class="font-bold text-green-700 text-sm">${fmtUsd(r.subMO)}</span>
+              <p class="text-xs text-green-500">${fmt(r.subMOArs)}</p>
+            </div>
             <button onclick="agregarMO()"
               class="bg-green-600 hover:bg-green-800 text-white text-xs px-2 py-1 rounded font-medium">+ Agregar</button>
           </div>
         </div>
-        ${moPresup.length ? `
+            ${moPresup.length ? `
           <table class="w-full text-xs">
             <thead><tr class="bg-gray-50 text-gray-500">
               <th class="px-3 py-1.5 text-left">Operario</th>
@@ -494,22 +526,33 @@ return `
           ${seccionItems('gastos_grales')}
         </div>
 
-        <!-- Columna derecha: resumen -->
+<!-- Columna derecha: resumen bimonetario -->
         <div class="lg:col-span-1">
           <div class="bg-white border-2 border-green-600 rounded-xl shadow-md sticky top-4">
-            <div class="bg-green-600 text-white px-4 py-2 rounded-t-xl">
+            <div class="bg-green-600 text-white px-4 py-2 rounded-t-xl flex items-center justify-between">
               <h4 class="font-bold text-sm">💰 Resumen del proyecto</h4>
+              <div class="text-xs">
+                T/C: <input type="number" value="${proyecto.tc_dolar}"
+                  class="w-20 text-xs text-center rounded border-0 text-gray-900"
+                  onblur="actualizarProyecto('tc_dolar', this.value)" />
+              </div>
             </div>
             <div class="p-4 space-y-3">
 
-              <!-- Costos -->
+              <!-- Costos en USD -->
               <div class="text-xs space-y-1">
-                <div class="flex justify-between"><span class="text-gray-500">Mano de obra</span><span class="font-medium">${fmt(r.subMO)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Materiales</span><span class="font-medium">${fmt(r.subMateriales)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Equipos</span><span class="font-medium">${fmt(r.subEquipos)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Subcontratos</span><span class="font-medium">${fmt(r.subSubcontratos)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-500">Gastos grales</span><span class="font-medium">${fmt(r.subGastos)}</span></div>
-                <div class="flex justify-between border-t pt-1 mt-1"><span class="font-semibold">Costo directo</span><span class="font-bold">${fmt(r.costoDirecto)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">👷 Mano de obra</span><span class="font-medium">${fmtUsd(r.subMO)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">📦 Materiales</span><span class="font-medium">${fmtUsd(r.subMateriales)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">🏗️ Equipos</span><span class="font-medium">${fmtUsd(r.subEquipos)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">🤝 Subcontratos</span><span class="font-medium">${fmtUsd(r.subSubcontratos)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-500">📋 Gastos grales</span><span class="font-medium">${fmtUsd(r.subGastos)}</span></div>
+                <div class="flex justify-between border-t pt-1 mt-1">
+                  <span class="font-semibold">Costo directo</span>
+                  <div class="text-right">
+                    <span class="font-bold">${fmtUsd(r.costoDirecto)}</span>
+                    <p class="text-[10px] text-gray-400">${fmt(r.costoDirectoArs)}</p>
+                  </div>
+                </div>
               </div>
 
               <!-- Imprevistos -->
@@ -522,11 +565,14 @@ return `
                 </div>
                 <div class="flex justify-between text-xs">
                   <span class="text-gray-500">+ Imprevistos</span>
-                  <span class="font-medium">${fmt(r.imprevistos)}</span>
+                  <span class="font-medium">${fmtUsd(r.imprevistos)}</span>
                 </div>
                 <div class="flex justify-between text-sm pt-1 border-t mt-1">
                   <span class="font-bold">Costo total</span>
-                  <span class="font-black">${fmt(r.costoTotal)}</span>
+                  <div class="text-right">
+                    <span class="font-black">${fmtUsd(r.costoTotal)}</span>
+                    <p class="text-[10px] text-gray-400">${fmt(r.costoTotalArs)}</p>
+                  </div>
                 </div>
               </div>
 
@@ -540,21 +586,18 @@ return `
                 </div>
                 <div class="flex justify-between text-xs text-purple-700">
                   <span>+ Margen</span>
-                  <span class="font-medium">${fmt(r.utilidad)}</span>
+                  <span class="font-medium">${fmtUsd(r.utilidad)}</span>
                 </div>
               </div>
 
-              <!-- Precio venta -->
-              <div class="bg-green-700 text-white rounded-lg p-3 text-center">
+              <!-- Precio venta bimonetario -->
+              <div class="bg-green-700 text-white rounded-lg p-4 text-center">
                 <p class="text-xs uppercase tracking-wide opacity-80">Precio de venta</p>
-                <p class="text-2xl font-black">${fmt(r.precioVenta)}</p>
-                <div class="flex items-center justify-center gap-2 mt-1">
-                  <span class="text-xs opacity-80">T/C:</span>
-                  <input type="number" value="${proyecto.tc_dolar}"
-                    class="w-20 text-xs text-center rounded border-0 text-gray-900"
-                    onblur="actualizarProyecto('tc_dolar', this.value)" />
+                <p class="text-3xl font-black">${fmtUsd(r.precioVenta)}</p>
+                <div class="border-t border-green-500 mt-2 pt-2">
+                  <p class="text-xs opacity-80">Equivalente en pesos</p>
+                  <p class="text-lg font-bold">${fmt(r.precioVentaArs)}</p>
                 </div>
-                <p class="text-sm font-bold mt-1">${fmtUsd(r.precioVentaUsd)}</p>
               </div>
 
               <!-- Modo de cobro -->
@@ -587,7 +630,7 @@ return `
                     </div>
                   </div>
                   <div class="mt-2 text-center text-xs text-blue-700">
-                    <strong>${fmt(r.precioVenta / (proyecto.cantidad_unidad || 1))}</strong> por ${proyecto.unidad_cobro}
+                    <strong>${fmtUsd(r.precioVenta / (proyecto.cantidad_unidad || 1))}</strong> por ${proyecto.unidad_cobro}
                   </div>
                 ` : ''}
               </div>
@@ -595,7 +638,6 @@ return `
             </div>
           </div>
         </div>
-
       </div>
     `
   }
@@ -673,7 +715,7 @@ window.agregarItem = async (categoria) => {
             <input id="ai-desc" type="text" placeholder="Ej: Caño estructural 100x100x3.2"
               class="w-full rounded-lg border-gray-300 text-sm" />
           </div>
-          <div class="grid grid-cols-3 gap-2">
+<div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block text-xs text-gray-500 mb-1">Cantidad</label>
               <input id="ai-cant" type="number" step="0.01" value="1"
@@ -685,12 +727,21 @@ window.agregarItem = async (categoria) => {
                 ${UNIDADES.map(u => `<option>${u}</option>`).join('')}
               </select>
             </div>
-            <div>
-              <label class="block text-xs text-gray-500 mb-1">Precio unit. $</label>
-              <input id="ai-precio" type="text" value="0"
-                class="w-full rounded-lg border-gray-300 text-sm text-right input-numero-modal" />
+<div>
+              <label class="block text-xs text-gray-500 mb-1">Precio unit.</label>
+              <input id="ai-precio" type="number" step="0.01" value="0"
+                class="w-full rounded-lg border-gray-300 text-sm text-right" />
             </div>
-          </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Moneda</label>
+              <select id="ai-moneda" class="w-full rounded-lg border-gray-300 text-sm">
+                <option value="USD">U$S</option>
+                <option value="ARS">$ Pesos</option>
+              </select>
+            </div>
+            </div>
+            </div>
+          <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block text-xs text-gray-500 mb-1">Notas (opcional)</label>
             <input id="ai-notas" type="text" class="w-full rounded-lg border-gray-300 text-sm" />
@@ -753,18 +804,19 @@ window.agregarItem = async (categoria) => {
       inpBusca.addEventListener('focus', () => renderResultados(''))
       inpBusca.addEventListener('input', e => renderResultados(e.target.value))
 
-      window.seleccionarItemCatalogo = (id) => {
+window.seleccionarItemCatalogo = (id) => {
         const it = catalogo.find(c => c.id === id)
         if (!it) return
         document.getElementById('ai-desc').value    = it.descripcion
         document.getElementById('ai-unidad').value  = it.unidad
-        document.getElementById('ai-precio').value  = formatearNumero(it.precio_unitario)
+        document.getElementById('ai-precio').value  = it.precio_unitario
+        document.getElementById('ai-moneda').value  = it.moneda || 'USD'
         if (it.notas) document.getElementById('ai-notas').value = it.notas
         dropResult.classList.add('hidden')
         inpBusca.value = ''
         document.getElementById('ai-cant').focus()
       }
-
+    
       // Formato de número en el input de precio manual
       const inpPrecio = modal.querySelector('.input-numero-modal')
       if (inpPrecio) {
@@ -775,10 +827,10 @@ window.agregarItem = async (categoria) => {
         })
       }
 
-      window.confirmarAgregarItem = async (cat) => {
+window.confirmarAgregarItem = async (cat) => {
         const desc = document.getElementById('ai-desc').value.trim()
         if (!desc) { alert('Ingresá la descripción'); return }
-        const precio = parseFloat(document.getElementById('ai-precio').value.replace(/\./g, '')) || 0
+        const precio = parseFloat(document.getElementById('ai-precio').value) || 0
 
         await supabase.from('proyecto_items').insert({
           proyecto_id: proyectoId,
@@ -787,6 +839,7 @@ window.agregarItem = async (categoria) => {
           cantidad: parseFloat(document.getElementById('ai-cant').value) || 1,
           unidad: document.getElementById('ai-unidad').value,
           precio_unitario: precio,
+          moneda: document.getElementById('ai-moneda').value,
           notas: document.getElementById('ai-notas').value
         })
         modal.remove()
