@@ -9,12 +9,19 @@ const CATEGORIAS_OP = {
 }
 
 const CATEGORIAS_ITEM = {
-  materiales:    { label: 'Materiales',     color: 'blue',   icon: '📦' },
-  equipos:       { label: 'Equipos',        color: 'orange', icon: '🏗️' },
-  subcontratos:  { label: 'Subcontratos',   color: 'purple', icon: '🤝' },
-  gastos_grales: { label: 'Gastos grales',  color: 'gray',   icon: '📋' }
+  materiales:    { label: 'Materiales',    icon: '📦',
+    headerBg: 'bg-blue-50', headerBorder: 'border-blue-100', headerText: 'text-blue-700', headerSub: 'text-blue-600',
+    btnBg: 'bg-blue-600 hover:bg-blue-800' },
+  equipos:       { label: 'Equipos',       icon: '🏗️',
+    headerBg: 'bg-orange-50', headerBorder: 'border-orange-100', headerText: 'text-orange-700', headerSub: 'text-orange-600',
+    btnBg: 'bg-orange-600 hover:bg-orange-800' },
+  subcontratos:  { label: 'Subcontratos',  icon: '🤝',
+    headerBg: 'bg-purple-50', headerBorder: 'border-purple-100', headerText: 'text-purple-700', headerSub: 'text-purple-600',
+    btnBg: 'bg-purple-600 hover:bg-purple-800' },
+  gastos_grales: { label: 'Gastos grales', icon: '📋',
+    headerBg: 'bg-gray-50', headerBorder: 'border-gray-200', headerText: 'text-gray-700', headerSub: 'text-gray-600',
+    btnBg: 'bg-gray-600 hover:bg-gray-800' }
 }
-
 const UNIDADES = ['unidad','m','ml','m²','m³','kg','ton','hora','día','global','gl','viaje','jornal']
 
 const ESTADOS = {
@@ -360,18 +367,18 @@ export async function renderProyectos(contenedor) {
       const subtotal = lista.reduce((s,i) => s + (i.cantidad * i.precio_unitario), 0)
       const pct = r.costoDirecto > 0 ? (subtotal / r.costoDirecto * 100) : 0
 
-      return `
+return `
         <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3">
-          <div class="bg-${cat.color}-50 border-b border-${cat.color}-100 px-4 py-2 flex items-center justify-between">
-            <h4 class="font-semibold text-${cat.color}-700 text-sm">${cat.icon} ${cat.label}</h4>
+          <div class="${cat.headerBg} border-b ${cat.headerBorder} px-4 py-2 flex items-center justify-between">
+            <h4 class="font-semibold ${cat.headerText} text-sm">${cat.icon} ${cat.label}</h4>
             <div class="flex items-center gap-3">
-              <span class="text-xs text-${cat.color}-600">${fmtPct(pct)} del costo</span>
-              <span class="font-bold text-${cat.color}-700 text-sm">${fmt(subtotal)}</span>
+              <span class="text-xs ${cat.headerSub}">${fmtPct(pct)} del costo</span>
+              <span class="font-bold ${cat.headerText} text-sm">${fmt(subtotal)}</span>
               <button onclick="agregarItem('${categoria}')"
-                class="bg-${cat.color}-600 hover:bg-${cat.color}-800 text-white text-xs px-2 py-1 rounded font-medium">+ Agregar</button>
+                class="${cat.btnBg} text-white text-xs px-2 py-1 rounded font-medium">+ Agregar</button>
             </div>
           </div>
-          ${lista.length ? `
+                    ${lista.length ? `
             <table class="w-full text-xs">
               <thead><tr class="bg-gray-50 text-gray-500">
                 <th class="px-3 py-1.5 text-left">Descripción</th>
@@ -668,8 +675,8 @@ export async function renderProyectos(contenedor) {
         <div class="flex gap-3 mt-5">
           <button onclick="this.closest('[data-modal]').remove()"
             class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
-          <button onclick="confirmarAgregarItem('${categoria}')"
-            class="flex-1 bg-${cat.color}-600 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+            <button onclick="confirmarAgregarItem('${categoria}')"
+            class="flex-1 ${cat.btnBg} text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
         </div>
       `, 'max-w-md')
 
