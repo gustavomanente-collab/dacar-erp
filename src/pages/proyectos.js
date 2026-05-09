@@ -213,7 +213,7 @@ async function abrirModalNuevoProyecto() {
     const nombre = document.getElementById('np-nombre').value.trim()
     if (!nombre) { alert('Ingresá el nombre del proyecto'); return }
 
-    const { data, error } = await supabase.from('proyectos').insert({
+const { data, error } = await supabase.from('proyectos').insert({
       nombre,
       cliente_id: document.getElementById('np-cliente').value || null,
       cotizacion_id: document.getElementById('np-cot').value || null,
@@ -223,10 +223,11 @@ async function abrirModalNuevoProyecto() {
       notas: document.getElementById('np-notas').value
     }).select().single()
 
+    console.log('INSERT proyecto:', { data, error })
     if (error) { alert('Error: ' + error.message); return }
+    if (!data) { alert('El proyecto no se devolvió. Recargá.'); return }
     modal.remove()
-    abrirFichaProyectoCompleta(data.id)
-  }
+    abrirFichaProyectoCompleta(data.id)  }
 }
 
 // ════════════════════════════════════════════════════════
