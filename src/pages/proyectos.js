@@ -234,8 +234,10 @@ async function abrirModalNuevoProyecto() {
 // ════════════════════════════════════════════════════════
 async function abrirFichaProyectoCompleta(proyectoId) {
   const data = await cargarDatosProyecto(proyectoId)
-  if (!data) { alert('Proyecto no encontrado'); return }
-
+  if (!data || !data.proyecto) {
+    alert('No se pudo cargar el proyecto. Recargá la página.')
+    return
+  }
   const modal = crearModal('', 'max-w-6xl')
   modal.querySelector('div[data-content]').innerHTML = renderFichaContenido(data)
   bindEventosFicha(proyectoId, modal, data)
