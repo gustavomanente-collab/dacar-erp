@@ -91,7 +91,6 @@ const { data: proyectos, error: errProy } = await supabase
     .select('*, clientes(nombre, codigo), cotizaciones!proyectos_cotizacion_id_fkey(numero)')
         .order('created_at', { ascending: false })
 
-  console.log('SELECT proyectos:', { proyectos, errProy })
   el.innerHTML = `
     <div class="flex justify-between items-center mb-4">
       <h3 class="font-semibold text-gray-700">Proyectos</h3>
@@ -224,7 +223,6 @@ const { data, error } = await supabase.from('proyectos').insert({
       notas: document.getElementById('np-notas').value
     }).select().single()
 
-    console.log('INSERT proyecto:', { data, error })
     if (error) { alert('Error: ' + error.message); return }
     if (!data) { alert('El proyecto no se devolvió. Recargá.'); return }
     modal.remove()
@@ -419,10 +417,7 @@ for (const it of itemsACrear) {
           dto: 0
         })
       }
-      console.log('INSERT cotizacion_items:', payload)
-      const { error: errIns } = await supabase.from('cotizacion_items').insert(payload)
-      if (errIns) console.error('Error insertando:', errIns)
-    }
+await supabase.from('cotizacion_items').insert(payload)    }
     // Vincular proyecto a cotización y guardar % de comisión
     await supabase.from('cotizaciones').update({
       proyecto_id: proyId,
