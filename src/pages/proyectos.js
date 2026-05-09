@@ -314,10 +314,20 @@ function renderFichaContenido(data) {
             ${proyecto.cotizaciones?.numero ? ' · Ppto 2026-' + String(proyecto.cotizaciones.numero).padStart(3,'0') : ''}
           </p>
         </div>
-        <div class="flex items-center gap-2">
+<div class="flex items-center gap-2">
+          ${proyecto.cotizacion_id ? `
+            <button onclick="trasladarACotizacion('${proyecto.id}')"
+              class="text-xs bg-white text-green-700 hover:bg-green-50 px-3 py-1.5 rounded-lg font-medium border border-white">
+              📋 Trasladar al ppto
+            </button>
+          ` : `
+            <span class="text-xs bg-yellow-500/20 text-yellow-100 px-3 py-1.5 rounded-lg">
+              Sin cotización vinculada
+            </span>
+          `}
           <select onchange="cambiarEstadoProyecto('${proyecto.id}', this.value)"
             class="text-xs rounded-lg border-0 bg-white/20 text-white">
-            ${Object.entries(ESTADOS).map(([k,v]) => `<option class="text-gray-900" value="${k}" ${proyecto.estado===k?'selected':''}>${v.label}</option>`).join('')}
+                        ${Object.entries(ESTADOS).map(([k,v]) => `<option class="text-gray-900" value="${k}" ${proyecto.estado===k?'selected':''}>${v.label}</option>`).join('')}
           </select>
           <button onclick="this.closest('[data-modal]').remove()" class="text-gray-300 hover:text-white text-2xl font-bold">×</button>
         </div>
@@ -357,7 +367,59 @@ function bindEventosFicha(proyectoId, modal, data) {
     if (tab === 'real')        cont.innerHTML = renderReal(data)
     if (tab === 'comparativo') cont.innerHTML = renderComparativo(data)
   }
+window.trasladarACotizacion = async (proyId) => {
+    const fresh = await cargarDatosProyecto(proyId)
+    if (!fresh.proyecto.cotizacion_id) {
+      alert('Este proyecto no está vinculado a una cotización.')
+      return
+    }
 
+    if (!confirm('¿Trasladar el proyecto al presupuesto?\n\nVa a reemplazar los ítems de proyecto que ya estén cargados en el ppto.')) return
+
+    const r = calcularResumen(fresh)
+    const cotId = fresh.proyecto.cotizacion_id
+
+    // Borrar items previos del mismo proyecto en la cotización
+    await supabase.from('cotizacion_items').delete()
+      .eq('cotizacion_id', cotId)
+      .eq('proyecto_id', proyId)
+
+    // Crear los 5 items nuevos
+    const labels = {
+      mo:           '👷 Mano de obra (proyecto)',
+      materiales:   '📦 Materiales (proyecto)',
+      equipos:      '🏗️ Equipos (proyecto)',
+      subcontratos: '🤝 Subcontratos (proyecto)',
+      gastos:       '📋 Gastos generales (proyecto)'
+    }
+
+    const itemsACrear = [
+      { categoria_proyecto: 'mo',           descripcion: labels.mo,           monto: r.subMO },
+      { categoria_proyecto: 'materiales',   descripcion: labels.materiales,   monto: r.subMateriales },
+      { categoria_proyecto: 'equipos',      descripcion: labels.equipos,      monto: r.subEquipos },
+      { categoria_proyecto: 'subcontratos', descripcion: labels.subcontratos, monto: r.subSubcontratos },
+      { categoria_proyecto: 'gastos',       descripcion: labels.gastos,       monto: r.subGastos }
+    ].filter(it => it.monto > 0)
+
+    for (const it of itemsACrear) {
+      await supabase.from('cotizacion_items').insert({
+        cotizacion_id: cotId,
+        descripcion: it.descripcion,
+        cantidad: 1,
+        precio_unitario: it.monto,
+        proyecto_id: proyId,
+        categoria_proyecto: it.categoria_proyecto
+      })
+    }
+
+    // Vincular proyecto a cotización y guardar % de comisión
+    await supabase.from('cotizaciones').update({
+      proyecto_id: proyId,
+      pct_comision_override: fresh.proyecto.pct_comision || 15
+    }).eq('id', cotId)
+
+    alert(`✅ Trasladado al presupuesto:\n\n${itemsACrear.length} ítems por U$S ${r.costoDirecto.toFixed(2)}\n\nPodés ver y editar en el cotizador.`)
+  }
   window.cambiarEstadoProyecto = async (id, estado) => {
     await supabase.from('proyectos').update({ estado }).eq('id', id)
     modal.remove()
@@ -569,10 +631,32 @@ function renderAnalisisPrecios(data) {
               </div>
             </div>
 
-            <div class="bg-purple-50 rounded-lg p-3">
+<div class="bg-purple-50 rounded-lg p-3">
               <div class="flex items-center justify-between mb-1">
                 <label class="text-xs text-purple-600 font-semibold">Utilidad</label>
                 <input type="number" step="0.5" value="${proyecto.pct_utilidad}"
+                  class="w-16 text-xs text-right rounded border-purple-300"
+                  onblur="actualizarProyecto('pct_utilidad', this.value)" /> %
+              </div>
+              <div class="flex justify-between text-xs text-purple-700">
+                <span>+ Margen</span>
+                <span class="font-medium">${fmtUsd(r.utilidad)}</span>
+              </div>
+            </div>
+
+            <!-- Comisión vendedor -->
+            <div class="bg-pink-50 rounded-lg p-3">
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs text-pink-600 font-semibold">💸 Comisión vendedor</label>
+                <input type="number" step="0.5" value="${proyecto.pct_comision || 15}"
+                  class="w-16 text-xs text-right rounded border-pink-300"
+                  onblur="actualizarProyecto('pct_comision', this.value)" /> %
+              </div>
+              <div class="flex justify-between text-xs text-pink-700">
+                <span>Sobre utilidad</span>
+                <span class="font-medium">${fmtUsd(r.utilidad * (proyecto.pct_comision || 15) / 100)}</span>
+              </div>
+            </div>                <input type="number" step="0.5" value="${proyecto.pct_utilidad}"
                   class="w-16 text-xs text-right rounded border-purple-300"
                   onblur="actualizarProyecto('pct_utilidad', this.value)" /> %
               </div>
