@@ -86,11 +86,12 @@ async function renderListaProyectos() {
   const el = document.getElementById('proy-content')
   el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
 
-  const { data: proyectos } = await supabase
+  const { data: proyectos, error: errProy } = await supabase
     .from('proyectos')
     .select('*, clientes(nombre, codigo), cotizaciones(numero)')
     .order('created_at', { ascending: false })
 
+  console.log('SELECT proyectos:', { proyectos, errProy })
   el.innerHTML = `
     <div class="flex justify-between items-center mb-4">
       <h3 class="font-semibold text-gray-700">Proyectos</h3>
