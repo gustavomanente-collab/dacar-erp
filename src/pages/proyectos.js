@@ -405,17 +405,24 @@ window.trasladarACotizacion = async (proyId) => {
       { categoria_proyecto: 'gastos',       descripcion: labels.gastos,       monto: r.subGastos }
     ].filter(it => it.monto > 0)
 
-    for (const it of itemsACrear) {
-      await supabase.from('cotizacion_items').insert({
+for (const it of itemsACrear) {
+      const payload = {
         cotizacion_id: cotId,
         descripcion: it.descripcion,
         cantidad: 1,
         precio_unitario: it.monto,
         proyecto_id: proyId,
-        categoria_proyecto: it.categoria_proyecto
-      })
+        categoria_proyecto: it.categoria_proyecto,
+        notas: JSON.stringify({
+          tipo: 'proyecto',
+          costo_unit: it.monto,
+          dto: 0
+        })
+      }
+      console.log('INSERT cotizacion_items:', payload)
+      const { error: errIns } = await supabase.from('cotizacion_items').insert(payload)
+      if (errIns) console.error('Error insertando:', errIns)
     }
-
     // Vincular proyecto a cotización y guardar % de comisión
     await supabase.from('cotizaciones').update({
       proyecto_id: proyId,
