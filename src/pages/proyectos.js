@@ -86,10 +86,10 @@ async function renderListaProyectos() {
   const el = document.getElementById('proy-content')
   el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
 
-  const { data: proyectos, error: errProy } = await supabase
+const { data: proyectos, error: errProy } = await supabase
     .from('proyectos')
-    .select('*, clientes(nombre, codigo), cotizaciones(numero)')
-    .order('created_at', { ascending: false })
+    .select('*, clientes(nombre, codigo), cotizaciones!proyectos_cotizacion_id_fkey(numero)')
+        .order('created_at', { ascending: false })
 
   console.log('SELECT proyectos:', { proyectos, errProy })
   el.innerHTML = `
@@ -255,10 +255,10 @@ async function cargarDatosProyecto(proyectoId) {
     { data: costosHora },
     { data: operarios }
   ] = await Promise.all([
-    supabase.from('proyectos')
-      .select('*, clientes(nombre, obra, telefono), cotizaciones(numero, total_final)')
+supabase.from('proyectos')
+      .select('*, clientes(nombre, obra, telefono), cotizaciones!proyectos_cotizacion_id_fkey(numero, total_final)')
       .eq('id', proyectoId).single(),
-    supabase.from('proyecto_items').select('*').eq('proyecto_id', proyectoId).order('categoria').order('orden'),
+          supabase.from('proyecto_items').select('*').eq('proyecto_id', proyectoId).order('categoria').order('orden'),
     supabase.from('proyecto_items_real').select('*').eq('proyecto_id', proyectoId).order('fecha'),
     supabase.from('proyecto_mo_presupuesto').select('*, operarios(nombre, apellido)').eq('proyecto_id', proyectoId),
     supabase.from('proyecto_mo_real').select('*, operarios(nombre, apellido)').eq('proyecto_id', proyectoId).order('fecha'),
