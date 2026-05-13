@@ -185,15 +185,23 @@ if (dtoGer) dtoGer.value = datos.descuento_pct || 0
 renderItems()
 recalcular()
 }, 300)
-}  const { data: clientes } = await supabase
-.from('clientes').select('id,nombre,obra,direccion').order('nombre')
+}
 
+const { data: empresas } = await supabase
+    .from('empresas').select('*').eq('activa', true).order('nombre')
+window._empresas = empresas || []
+let empresaActual = (empresas || []).find(e => e.nombre === 'DACAR SRL') || empresas?.[0] || null
+
+const { data: clientes } = await supabase
+.from('clientes').select('id,nombre,obra,direccion').order('nombre')
 contenedor.innerHTML = `
 <div class="p-3 max-w-5xl mx-auto">
    <!-- ENCABEZADO -->
    <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 overflow-hidden">
      <div class="bg-gray-900 px-5 py-3 flex items-center justify-between">
-       <span class="text-white font-black text-lg tracking-wide">DACAR SRL</span>
+<select id="empresa-sel" onchange="cambiarEmpresa()" class="bg-white text-gray-900 rounded-lg text-sm font-bold px-3 py-1 border-0">
+  ${(empresas || []).map(e => `<option value="${e.id}" ${empresaActual?.id === e.id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
+</select>
        <span class="text-gray-400 text-sm">Nueva cotización</span>
      </div>
 <div class="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -977,7 +985,10 @@ return `<tr class="${it.opcional ? 'bg-yellow-50' : i % 2 === 0 ? 'bg-white' : '
      </tr>`
 }).join('')
 }
-
+window.cambiarEmpresa = () => {
+  const sel = document.getElementById('empresa-sel')
+  empresaActual = (window._empresas || []).find(e => e.id === sel.value) || null
+}
 window.editCant  = (i, v) => {
 if (items[i].tipo === 'panel') {
 const largo = items[i].largo || 1

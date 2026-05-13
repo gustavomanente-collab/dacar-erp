@@ -1,19 +1,24 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-export async function generarPDF(cot) {
+export async function generarPDF(cot, empresa) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
 
   // Encabezado
-  try {
-const img = await cargarImagen('https://i.ibb.co/gZ6vn8C3/encabezado-png.png')
-    doc.addImage(img, 'PNG', 10, 8, pw - 20, (pw - 20) * 0.18)
-} catch (e) {
-        doc.setFontSize(16).setFont('helvetica', 'bold')
-    doc.text('DACAR ESTRUCTURAS', pw / 2, 20, { align: 'center' })
-  }
+  const logoUrl = empresa?.logo_url
+    ? (empresa.logo_url.startsWith('http') ? empresa.logo_url : window.location.origin + empresa.logo_url)
+    : 'https://i.ibb.co/gZ6vn8C3/encabezado-png.png'
 
+  const formato = logoUrl.toLowerCase().endsWith('.jpg') || logoUrl.toLowerCase().endsWith('.jpeg') ? 'JPEG' : 'PNG'
+
+  try {
+    const img = await cargarImagen(logoUrl)
+    doc.addImage(img, formato, 10, 8, pw - 20, (pw - 20) * 0.18)
+  } catch (e) {
+    doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text((empresa?.nombre || 'DACAR ESTRUCTURAS').toUpperCase(), pw / 2, 20, { align: 'center' })
+  }
   doc.setDrawColor(230, 180, 0).setLineWidth(0.8)
   doc.line(10, 44, pw - 10, 44)
 
