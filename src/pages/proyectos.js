@@ -648,7 +648,7 @@ await supabase.from('cotizacion_items').insert(payload)    }
 
   window.recargarFicha = async () => {
     modal.remove()
-    abrirFichaProyectoCompleta(proyectoId)
+    await abrirFichaProyectoCompleta(proyectoId)
   }
 
   subTabFicha('analisis')
@@ -1127,7 +1127,7 @@ function bindAnalisisEvents(proyectoId, modal, data) {
       if (!desc) { alert('Ingresá la descripción'); return }
       const precio = parseFloat(document.getElementById('ai-precio').value) || 0
 
-      await supabase.from('proyecto_items').insert({
+      const { error } = await supabase.from('proyecto_items').insert({
         proyecto_id: proyectoId,
         categoria: cat,
         descripcion: desc,
@@ -1137,6 +1137,7 @@ function bindAnalisisEvents(proyectoId, modal, data) {
         moneda: document.getElementById('ai-moneda').value,
         notas: document.getElementById('ai-notas').value
       })
+      if (error) { alert('Error al guardar el ítem: ' + error.message); return }
       m.remove()
       await window.recargarFicha()
     }
