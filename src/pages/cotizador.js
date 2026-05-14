@@ -106,6 +106,7 @@ const { data: lastCot } = await supabase
 .from('cotizaciones').select('numero').order('numero', { ascending: false }).limit(1)
 const nextNum = lastCot?.length ? lastCot[0].numero + 1 : 1
 items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
+window._editandoIndex = null
 
 // Ver si hay una cotización para editar
 const editar = sessionStorage.getItem('editar_cotizacion')
