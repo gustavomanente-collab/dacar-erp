@@ -61,6 +61,7 @@ async function renderLogin() {
       .single()
 
     perfilGlobal = profile
+    window.perfilGlobal = profile
     const paginaInicio = profile?.role === 'gerencia' ? 'dashboard' : 'cotizador'
     renderApp(paginaInicio)
   })
@@ -75,12 +76,14 @@ function renderApp(pagina) {
   document.getElementById('btn-logout')?.addEventListener('click', async () => {
     await supabase.auth.signOut()
     perfilGlobal = null
+    window.perfilGlobal = null
     renderLogin()
   })
 
   document.getElementById('btn-logout-mobile')?.addEventListener('click', async () => {
     await supabase.auth.signOut()
     perfilGlobal = null
+    window.perfilGlobal = null
     renderLogin()
   })
 
@@ -127,6 +130,7 @@ if (session) {
     .eq('id', session.user.id)
     .single()
   perfilGlobal = profile
+  window.perfilGlobal = profile
   const paginaInicio = profile?.role === 'gerencia' ? 'dashboard' : 'cotizador'
   renderApp(paginaInicio)
 } else {

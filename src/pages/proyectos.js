@@ -1,4 +1,6 @@
 import { supabase } from '../supabase.js'
+import * as XLSX from 'xlsx'
+import { generarPDFProyecto } from '../pdf.js'
 
 const CATEGORIAS_OP = {
   oficial_especializado: 'Oficial Especializado',
@@ -281,7 +283,7 @@ function calcularResumen(data) {
   const subSubcontratos = items.filter(i => i.categoria === 'subcontratos').reduce((s,i) => s + itemAUsd(i), 0)
   const subGastos       = items.filter(i => i.categoria === 'gastos_grales').reduce((s,i) => s + itemAUsd(i), 0)
 
-  const subMOArs = moPresup.reduce((s,m) => s + (m.dias * m.horas_dia * m.costo_hora), 0)
+  const subMOArs = moPresup.reduce((s,m) => s + ((m.cantidad_operarios || 1) * m.dias * m.horas_dia * m.costo_hora), 0)
   const subMO    = subMOArs / tc
 
   const costoDirecto = subMateriales + subEquipos + subSubcontratos + subGastos + subMO
@@ -317,6 +319,14 @@ function renderFichaContenido(data) {
           </p>
         </div>
 <div class="flex items-center gap-2">
+          <button onclick="exportarPDFProyecto('${proyecto.id}')"
+            class="text-xs bg-white text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg font-medium border border-white">
+            📄 PDF Cliente
+          </button>
+          <button onclick="exportarExcelProyecto('${proyecto.id}')"
+            class="text-xs bg-white text-emerald-700 hover:bg-emerald-50 px-3 py-1.5 rounded-lg font-medium border border-white">
+            📊 Excel
+          </button>
           ${proyecto.cotizacion_id ? `
             <button onclick="trasladarACotizacion('${proyecto.id}')"
               class="text-xs bg-white text-green-700 hover:bg-green-50 px-3 py-1.5 rounded-lg font-medium border border-white">
@@ -425,6 +435,210 @@ await supabase.from('cotizacion_items').insert(payload)    }
     }).eq('id', cotId)
 
     alert(`✅ Trasladado al presupuesto:\n\n${itemsACrear.length} ítems por U$S ${r.costoDirecto.toFixed(2)}\n\nPodés ver y editar en el cotizador.`)
+  }
+
+  // ════════════════════════════════════════════════════════
+  // EXPORTAR A PDF (cliente - sin costos, logo NODO)
+  // ════════════════════════════════════════════════════════
+  window.exportarPDFProyecto = async (proyId) => {
+    const fresh = await cargarDatosProyecto(proyId)
+    if (!fresh?.proyecto) { alert('No se pudo cargar el proyecto'); return }
+
+    // Buscar empresa NODO; fallback DACAR si no existe
+    const { data: empresas } = await supabase
+      .from('empresas').select('*').eq('activa', true)
+    const empresaNodo = (empresas || []).find(e => e.nombre?.toUpperCase().includes('NODO'))
+                     || (empresas || []).find(e => e.nombre?.toUpperCase().includes('DACAR'))
+                     || (empresas || [])[0]
+                     || null
+
+    const r = calcularResumen(fresh)
+    await generarPDFProyecto(fresh.proyecto, fresh.items, fresh.moPresup, r, empresaNodo)
+  }
+
+  // ════════════════════════════════════════════════════════
+  // EXPORTAR A EXCEL (con fórmulas, costos visibles, bimonetario)
+  // ════════════════════════════════════════════════════════
+  window.exportarExcelProyecto = async (proyId) => {
+    const fresh = await cargarDatosProyecto(proyId)
+    if (!fresh?.proyecto) { alert('No se pudo cargar el proyecto'); return }
+    const { proyecto, items, moPresup } = fresh
+    const r = calcularResumen(fresh)
+    const tc = proyecto.tc_dolar || 1150
+    const fecha = new Date().toLocaleDateString('es-AR')
+
+    // Estilos
+    const sTitle    = { font: { bold: true, sz: 14, color: { rgb: '0F172A' } } }
+    const sSubtitle = { font: { bold: true, sz: 11, color: { rgb: '0F172A' } } }
+    const sHeader   = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F172A' } }, alignment: { horizontal: 'center' } }
+    const sCatMO    = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '15803D' } } }
+    const sCatMat   = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1D4ED8' } } }
+    const sCatEq    = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: 'EA580C' } } }
+    const sCatSub   = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '7C3AED' } } }
+    const sCatGast  = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '6B7280' } } }
+    const sMoney    = { numFmt: '"U$S "#,##0.00' }
+    const sMoneyB   = { font: { bold: true }, numFmt: '"U$S "#,##0.00' }
+    const sMoneyAR  = { numFmt: '"$ "#,##0' }
+    const sMoneyRes = { font: { bold: true, color: { rgb: '15803D' }, sz: 12 }, numFmt: '"U$S "#,##0.00' }
+    const sBold     = { font: { bold: true } }
+    const sCenter   = { alignment: { horizontal: 'center' } }
+    const sGray     = { fill: { fgColor: { rgb: 'F8FAFC' } } }
+    const sLabel    = { font: { bold: true }, alignment: { horizontal: 'right' } }
+
+    // Encabezado fijo: T/C va en E4 para usar en fórmulas
+    const filas = [
+      [{ v: `PROYECTO: ${proyecto.nombre}`, s: sTitle }],
+      [],
+      [
+        { v: 'Cliente', s: sBold }, { v: proyecto.clientes?.nombre || '' },
+        { v: '' },
+        { v: 'Fecha', s: sBold }, { v: fecha }
+      ],
+      [
+        { v: 'Obra', s: sBold }, { v: proyecto.clientes?.obra || '' },
+        { v: '' },
+        { v: 'T/C $/U$S', s: sBold }, { v: tc, t: 'n', s: { font: { bold: true }, numFmt: '#,##0' } }
+      ],
+      [],
+      // Cabecera tabla (fila 6)
+      [
+        { v: 'DESCRIPCIÓN',    s: sHeader },
+        { v: 'CANT.',          s: sHeader },
+        { v: 'UNIDAD',         s: sHeader },
+        { v: 'COSTO UNIT',     s: sHeader },
+        { v: 'MON.',           s: sHeader },
+        { v: 'SUBTOTAL U$S',   s: sHeader },
+        { v: 'SUBTOTAL $',     s: sHeader },
+      ]
+    ]
+
+    // Helper para agregar una categoría
+    const addCategoria = (label, lista, estiloCat) => {
+      if (!lista.length) return
+      filas.push([
+        { v: label, s: estiloCat },
+        { v: '', s: estiloCat }, { v: '', s: estiloCat }, { v: '', s: estiloCat },
+        { v: '', s: estiloCat }, { v: '', s: estiloCat }, { v: '', s: estiloCat }
+      ])
+      lista.forEach((it, i) => {
+        const row = filas.length + 1 // 1-indexed
+        const isArs = it.moneda === 'ARS'
+        const estiloBase = i % 2 === 0 ? {} : sGray
+        filas.push([
+          { v: it.descripcion, s: estiloBase },
+          { v: it.cantidad, t: 'n', s: { ...estiloBase, ...sCenter } },
+          { v: it.unidad, s: { ...estiloBase, ...sCenter } },
+          { v: it.precio_unitario, t: 'n', s: { ...estiloBase, numFmt: '#,##0.00' } },
+          { v: it.moneda, s: { ...estiloBase, ...sCenter } },
+          // USD = ARS ? (cant*precio)/TC : cant*precio
+          { f: isArs ? `(B${row}*D${row})/$E$4` : `B${row}*D${row}`, t: 'n', s: { ...estiloBase, ...sMoney } },
+          // ARS = USD * TC
+          { f: `F${row}*$E$4`, t: 'n', s: { ...estiloBase, ...sMoneyAR } },
+        ])
+      })
+    }
+
+    // MANO DE OBRA — siempre en pesos
+    if (moPresup.length) {
+      filas.push([
+        { v: 'MANO DE OBRA', s: sCatMO },
+        { v: '', s: sCatMO }, { v: '', s: sCatMO }, { v: '', s: sCatMO },
+        { v: '', s: sCatMO }, { v: '', s: sCatMO }, { v: '', s: sCatMO }
+      ])
+      moPresup.forEach((m, i) => {
+        const op = m.cantidad_operarios || 1
+        const totalHs = op * m.dias * m.horas_dia
+        const nombre = m.descripcion_tarea
+          ? m.descripcion_tarea
+          : `${m.operarios?.apellido||''}, ${m.operarios?.nombre||''}`.trim() || '—'
+        const row = filas.length + 1
+        const estiloBase = i % 2 === 0 ? {} : sGray
+        filas.push([
+          { v: nombre, s: estiloBase },
+          { v: totalHs, t: 'n', s: { ...estiloBase, ...sCenter } },
+          { v: 'hs', s: { ...estiloBase, ...sCenter } },
+          { v: m.costo_hora, t: 'n', s: { ...estiloBase, numFmt: '#,##0.00' } },
+          { v: 'ARS', s: { ...estiloBase, ...sCenter } },
+          { f: `(B${row}*D${row})/$E$4`, t: 'n', s: { ...estiloBase, ...sMoney } },
+          { f: `F${row}*$E$4`, t: 'n', s: { ...estiloBase, ...sMoneyAR } },
+        ])
+      })
+    }
+
+    addCategoria('MATERIALES',       items.filter(i => i.categoria === 'materiales'),   sCatMat)
+    addCategoria('EQUIPOS',          items.filter(i => i.categoria === 'equipos'),      sCatEq)
+    addCategoria('SUBCONTRATOS',     items.filter(i => i.categoria === 'subcontratos'), sCatSub)
+    addCategoria('GASTOS GENERALES', items.filter(i => i.categoria === 'gastos_grales'),sCatGast)
+
+    // RESUMEN
+    filas.push([])
+    filas.push([{ v: 'RESUMEN', s: sSubtitle }])
+
+    const rowCostoD = filas.length + 1
+    filas.push([
+      { v: 'Costo directo', s: sLabel }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+      { v: r.costoDirecto, t: 'n', s: sMoneyB },
+      { f: `F${rowCostoD}*$E$4`, t: 'n', s: { font: { bold: true }, numFmt: '"$ "#,##0' } }
+    ])
+
+    const rowImp = filas.length + 1
+    filas.push([
+      { v: `+ Imprevistos (${proyecto.pct_imprevistos || 10}%)`, s: sLabel }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+      { f: `F${rowCostoD}*${(proyecto.pct_imprevistos || 10)/100}`, t: 'n', s: sMoney },
+      { f: `F${rowImp}*$E$4`, t: 'n', s: sMoneyAR }
+    ])
+
+    const rowCostoT = filas.length + 1
+    filas.push([
+      { v: 'Costo total', s: sLabel }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+      { f: `F${rowCostoD}+F${rowImp}`, t: 'n', s: sMoneyB },
+      { f: `F${rowCostoT}*$E$4`, t: 'n', s: { font: { bold: true }, numFmt: '"$ "#,##0' } }
+    ])
+
+    const rowUtil = filas.length + 1
+    filas.push([
+      { v: `+ Utilidad (${proyecto.pct_utilidad || 25}%)`, s: sLabel }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+      { f: `F${rowCostoT}*${(proyecto.pct_utilidad || 25)/100}`, t: 'n', s: sMoney },
+      { f: `F${rowUtil}*$E$4`, t: 'n', s: sMoneyAR }
+    ])
+
+    const rowPV = filas.length + 1
+    filas.push([
+      { v: 'PRECIO VENTA', s: { ...sLabel, font: { bold: true, sz: 12 } } }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+      { f: `F${rowCostoT}+F${rowUtil}`, t: 'n', s: sMoneyRes },
+      { f: `F${rowPV}*$E$4`, t: 'n', s: { font: { bold: true, color: { rgb: '15803D' }, sz: 12 }, numFmt: '"$ "#,##0' } }
+    ])
+
+    if (proyecto.pct_comision && proyecto.pct_comision > 0) {
+      const rowCom = filas.length + 1
+      filas.push([
+        { v: `Comisión vendedor (${proyecto.pct_comision}% s/ utilidad)`, s: sLabel }, { v:'' },{ v:'' },{ v:'' },{ v:'' },
+        { f: `F${rowUtil}*${proyecto.pct_comision/100}`, t: 'n', s: sMoney },
+        { f: `F${rowCom}*$E$4`, t: 'n', s: sMoneyAR }
+      ])
+    }
+
+    if (proyecto.modo_cobro === 'unidad' && proyecto.cantidad_unidad > 0) {
+      const rowU = filas.length + 1
+      filas.push([])
+      filas.push([
+        { v: `Precio por ${proyecto.unidad_cobro} (total: ${proyecto.cantidad_unidad} ${proyecto.unidad_cobro})`, s: sLabel },
+        { v:'' },{ v:'' },{ v:'' },{ v:'' },
+        { f: `F${rowPV}/${proyecto.cantidad_unidad}`, t: 'n', s: sMoneyB },
+        { f: `G${rowU}*0`, t: 'n', s: { numFmt: '"$ "#,##0' } } // placeholder
+      ])
+    }
+
+    // Construir hoja
+    const ws = XLSX.utils.aoa_to_sheet(filas)
+    ws['!cols'] = [
+      { wch: 48 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 18 }
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Análisis')
+    const fname = `Proyecto_${(proyecto.nombre || 'sin_nombre').replace(/\s+/g, '_').replace(/[^\w\-]/g, '')}_${Date.now()}.xlsx`
+    XLSX.writeFile(wb, fname)
   }
   window.cambiarEstadoProyecto = async (id, estado) => {
     await supabase.from('proyectos').update({ estado }).eq('id', id)
@@ -537,14 +751,17 @@ function renderAnalisisPrecios(data) {
             <p class="text-xs text-green-500">${fmt(r.subMOArs)}</p>
           </div>
           <button onclick="agregarMO()"
-            class="bg-green-600 hover:bg-green-800 text-white text-xs px-2 py-1 rounded font-medium">+ Agregar</button>
+            class="bg-green-600 hover:bg-green-800 text-white text-xs px-2 py-1 rounded font-medium">+ Por operario</button>
+          <button onclick="agregarMOPorTarea()"
+            class="bg-teal-600 hover:bg-teal-800 text-white text-xs px-2 py-1 rounded font-medium">+ Por tarea</button>
         </div>
       </div>
       ${moPresup.length ? `
         <table class="w-full text-xs">
           <thead><tr class="bg-gray-50 text-gray-500">
-            <th class="px-3 py-1.5 text-left">Operario</th>
+            <th class="px-3 py-1.5 text-left">Operario / Tarea</th>
             <th class="px-2 py-1.5 text-left">Categoría</th>
+            <th class="px-2 py-1.5 text-center w-12">OP</th>
             <th class="px-2 py-1.5 text-center w-16">Días</th>
             <th class="px-2 py-1.5 text-center w-16">Hs/día</th>
             <th class="px-2 py-1.5 text-center w-16">Total Hs</th>
@@ -553,10 +770,22 @@ function renderAnalisisPrecios(data) {
             <th class="px-2 py-1.5 w-8"></th>
           </tr></thead>
           <tbody>
-            ${moPresup.map((m, i) => `
+            ${moPresup.map((m, i) => {
+              const op = m.cantidad_operarios || 1
+              const totalHs = op * m.dias * m.horas_dia
+              const esTarea = !!m.descripcion_tarea
+              const nombre = esTarea
+                ? `<span class="text-teal-700 font-medium">📋 ${escapeHtml(m.descripcion_tarea)}</span>`
+                : `${m.operarios?.apellido||''}, ${m.operarios?.nombre||''}`
+              return `
               <tr class="border-t border-gray-100 ${i%2===0?'bg-white':'bg-gray-50'}">
-                <td class="px-3 py-1 font-medium">${m.operarios?.apellido||''}, ${m.operarios?.nombre||''}</td>
+                <td class="px-3 py-1 font-medium">${nombre}</td>
                 <td class="px-2 py-1 text-gray-600">${CATEGORIAS_OP[m.categoria]||m.categoria} <span class="text-gray-400">(${m.gremio})</span></td>
+                <td class="px-2 py-1">
+                  <input type="number" min="1" step="1" value="${op}"
+                    class="w-full bg-transparent border-0 text-xs text-center"
+                    onblur="actualizarMO('${m.id}', 'cantidad_operarios', this.value)" ${esTarea ? '' : 'disabled'} />
+                </td>
                 <td class="px-2 py-1">
                   <input type="number" step="0.5" value="${m.dias}"
                     class="w-full bg-transparent border-0 text-xs text-center"
@@ -567,14 +796,18 @@ function renderAnalisisPrecios(data) {
                     class="w-full bg-transparent border-0 text-xs text-center"
                     onblur="actualizarMO('${m.id}', 'horas_dia', this.value)" />
                 </td>
-                <td class="px-2 py-1 text-center font-medium">${(m.dias * m.horas_dia).toFixed(0)}</td>
-                <td class="px-2 py-1 text-right text-gray-500">${fmt(m.costo_hora)}</td>
-                <td class="px-2 py-1 text-right font-medium">${fmt(m.dias * m.horas_dia * m.costo_hora)}</td>
+                <td class="px-2 py-1 text-center font-medium">${totalHs.toFixed(0)}</td>
+                <td class="px-2 py-1">
+                  <input type="number" step="100" value="${m.costo_hora}"
+                    class="w-full bg-transparent border-0 text-xs text-right"
+                    onblur="actualizarMO('${m.id}', 'costo_hora', this.value)" />
+                </td>
+                <td class="px-2 py-1 text-right font-medium">${fmt(totalHs * m.costo_hora)}</td>
                 <td class="px-2 py-1 text-center">
                   <button onclick="borrarMO('${m.id}')" class="text-red-400 hover:text-red-600">✕</button>
                 </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
       ` : `<p class="text-gray-400 text-xs text-center py-3">Sin mano de obra cargada.</p>`}
@@ -582,7 +815,7 @@ function renderAnalisisPrecios(data) {
   `
 
   return `
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
       <div class="lg:col-span-2">
         ${seccionMO}
         ${seccionItems('materiales')}
@@ -591,8 +824,8 @@ function renderAnalisisPrecios(data) {
         ${seccionItems('gastos_grales')}
       </div>
 
-      <div class="lg:col-span-1">
-        <div class="bg-white border-2 border-green-600 rounded-xl shadow-md sticky top-4">
+      <div class="lg:col-span-1 lg:sticky lg:top-4">
+        <div class="bg-white border-2 border-green-600 rounded-xl shadow-md">
           <div class="bg-green-600 text-white px-4 py-2 rounded-t-xl flex items-center justify-between">
             <h4 class="font-bold text-sm">💰 Resumen del proyecto</h4>
             <div class="text-xs">
@@ -738,7 +971,7 @@ function bindAnalisisEvents(proyectoId, modal, data) {
 
   window.actualizarMO = async (id, campo, valor) => {
     const update = {}
-    update[campo] = parseFloat(valor) || 0
+    update[campo] = (campo === 'cantidad_operarios') ? (parseInt(valor) || 1) : (parseFloat(valor) || 0)
     await supabase.from('proyecto_mo_presupuesto').update(update).eq('id', id)
     await window.recargarFicha()
   }
@@ -972,6 +1205,7 @@ function bindAnalisisEvents(proyectoId, modal, data) {
         operario_id: sel.value,
         categoria: opt.dataset.cat,
         gremio: opt.dataset.gremio,
+        cantidad_operarios: 1,
         dias: parseFloat(document.getElementById('mo-dias').value) || 0,
         horas_dia: parseFloat(document.getElementById('mo-hs').value) || 0,
         costo_hora: costo?.costo_hora || 0
@@ -979,6 +1213,134 @@ function bindAnalisisEvents(proyectoId, modal, data) {
       m.remove()
       await window.recargarFicha()
     }
+  }
+
+  window.agregarMOPorTarea = async () => {
+    const { data: tareas } = await supabase
+      .from('tareas_mo')
+      .select('*')
+      .eq('activo', true)
+      .order('nombre')
+
+    const m = crearModal(`
+      <h3 class="text-lg font-bold mb-4">📋 Agregar MO por tarea</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Tarea</label>
+          <select id="mt-tarea" class="w-full rounded-lg border-gray-300 text-sm">
+            <option value="">-- Seleccionar --</option>
+            ${(tareas||[]).map(t => `<option value="${escapeHtml(t.nombre)}">${escapeHtml(t.nombre)}</option>`).join('')}
+            <option value="__NUEVA__">➕ Agregar nueva tarea...</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Gremio</label>
+            <select id="mt-gremio" class="w-full rounded-lg border-gray-300 text-sm" onchange="actualizarCostoMT()">
+              <option value="UOCRA">UOCRA</option>
+              <option value="UOM">UOM</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Categoría</label>
+            <select id="mt-cat" class="w-full rounded-lg border-gray-300 text-sm" onchange="actualizarCostoMT()">
+              ${Object.entries(CATEGORIAS_OP).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">OP (cant.)</label>
+            <input id="mt-op" type="number" min="1" step="1" value="1" oninput="calcularTotalMT()"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">JR (días)</label>
+            <input id="mt-jr" type="number" step="0.5" value="1" oninput="calcularTotalMT()"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">HS x JR</label>
+            <input id="mt-hsjr" type="number" step="0.5" value="9" oninput="calcularTotalMT()"
+              class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">$/hora (sugerido, editable)</label>
+          <input id="mt-costohora" type="number" step="100" value="0" oninput="calcularTotalMT()"
+            class="w-full rounded-lg border-gray-300 text-sm" />
+        </div>
+        <div class="bg-teal-50 rounded-lg p-3 text-xs text-teal-700">
+          <p>Horas totales (OP × JR × HSxJR): <span id="mt-totalhs" class="font-medium">0</span></p>
+          <p class="mt-1 font-bold text-base">Subtotal: <span id="mt-subtotal">$0</span></p>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-5">
+        <button onclick="this.closest('[data-modal]').remove()"
+          class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+        <button onclick="confirmarMOPorTarea()"
+          class="flex-1 bg-teal-600 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+      </div>
+    `, 'max-w-md')
+
+    document.getElementById('mt-tarea').addEventListener('change', async (e) => {
+      if (e.target.value === '__NUEVA__') {
+        const nombre = prompt('Nombre de la nueva tarea:')
+        if (!nombre || !nombre.trim()) { e.target.value = ''; return }
+        const { error } = await supabase.from('tareas_mo').insert({ nombre: nombre.trim() })
+        if (error) { alert('Error: ' + error.message); e.target.value = ''; return }
+        const newOpt = document.createElement('option')
+        newOpt.value = nombre.trim()
+        newOpt.textContent = nombre.trim()
+        e.target.insertBefore(newOpt, e.target.querySelector('option[value="__NUEVA__"]'))
+        e.target.value = nombre.trim()
+      }
+    })
+
+    window.actualizarCostoMT = () => {
+      const gremio = document.getElementById('mt-gremio').value
+      const cat = document.getElementById('mt-cat').value
+      const costo = data.costosHora.find(c => c.categoria === cat && c.gremio === gremio)
+      const inp = document.getElementById('mt-costohora')
+      inp.value = costo?.costo_hora || 0
+      calcularTotalMT()
+    }
+
+    window.calcularTotalMT = () => {
+      const op = parseInt(document.getElementById('mt-op').value) || 0
+      const jr = parseFloat(document.getElementById('mt-jr').value) || 0
+      const hs = parseFloat(document.getElementById('mt-hsjr').value) || 0
+      const costo = parseFloat(document.getElementById('mt-costohora').value) || 0
+      const totalHs = op * jr * hs
+      document.getElementById('mt-totalhs').textContent = totalHs.toFixed(1) + ' hs'
+      document.getElementById('mt-subtotal').textContent = fmt(totalHs * costo)
+    }
+
+    window.confirmarMOPorTarea = async () => {
+      const tarea = document.getElementById('mt-tarea').value
+      if (!tarea || tarea === '__NUEVA__') { alert('Elegí una tarea'); return }
+      const op = parseInt(document.getElementById('mt-op').value) || 1
+      const jr = parseFloat(document.getElementById('mt-jr').value) || 0
+      const hs = parseFloat(document.getElementById('mt-hsjr').value) || 0
+      if (jr <= 0 || hs <= 0) { alert('Ingresá días y horas por jornal'); return }
+
+      await supabase.from('proyecto_mo_presupuesto').insert({
+        proyecto_id: proyectoId,
+        operario_id: null,
+        descripcion_tarea: tarea,
+        categoria: document.getElementById('mt-cat').value,
+        gremio: document.getElementById('mt-gremio').value,
+        cantidad_operarios: op,
+        dias: jr,
+        horas_dia: hs,
+        costo_hora: parseFloat(document.getElementById('mt-costohora').value) || 0
+      })
+      m.remove()
+      await window.recargarFicha()
+    }
+
+    // Auto-completar costo sugerido al abrir
+    actualizarCostoMT()
   }
 }
 

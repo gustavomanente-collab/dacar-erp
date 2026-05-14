@@ -127,3 +127,162 @@ function cargarImagen(url) {
     img.src = url
   })
 }
+
+// ════════════════════════════════════════════════════════
+// PDF DE PROYECTO (cliente - sin costos)
+// ════════════════════════════════════════════════════════
+export async function generarPDFProyecto(proyecto, items, moPresup, resumen, empresa) {
+  const doc = new jsPDF()
+  const pw = doc.internal.pageSize.getWidth()
+  const ph = doc.internal.pageSize.getHeight()
+
+  // Logo
+  const logoUrl = empresa?.logo_url
+    ? (empresa.logo_url.startsWith('http') ? empresa.logo_url : window.location.origin + empresa.logo_url)
+    : null
+
+  if (logoUrl) {
+    const formato = logoUrl.toLowerCase().endsWith('.jpg') || logoUrl.toLowerCase().endsWith('.jpeg') ? 'JPEG' : 'PNG'
+    try {
+      const img = await cargarImagen(logoUrl)
+      doc.addImage(img, formato, 10, 8, pw - 20, (pw - 20) * 0.18)
+    } catch (e) {
+      doc.setFontSize(16).setFont('helvetica', 'bold')
+      doc.text((empresa?.nombre || 'NODO').toUpperCase(), pw / 2, 20, { align: 'center' })
+    }
+  } else {
+    doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text((empresa?.nombre || 'NODO').toUpperCase(), pw / 2, 20, { align: 'center' })
+  }
+
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.8)
+  doc.line(10, 44, pw - 10, 44)
+
+  // Título
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text('PROPUESTA DE PROYECTO', pw - 10, 50, { align: 'right' })
+  doc.setFontSize(14).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text(proyecto.nombre.toUpperCase(), pw - 10, 58, { align: 'right' })
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text(new Date().toLocaleDateString('es-AR'), pw - 10, 64, { align: 'right' })
+
+  // Cliente
+  doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text(`Señores: ${proyecto.clientes?.nombre || ''}`, 10, 52)
+  if (proyecto.clientes?.obra) {
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Obra: ${proyecto.clientes.obra}`, 10, 58)
+  }
+
+  let cursorY = 75
+
+  // Helper para sección
+  const renderSeccion = (titulo, filas) => {
+    if (!filas.length) return
+
+    // Saltar página si no hay lugar para al menos el encabezado + 2 filas
+    if (cursorY > ph - 50) {
+      doc.addPage()
+      cursorY = 20
+    }
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [[
+        { content: titulo, styles: { fillColor: [21, 128, 61], textColor: 255, fontStyle: 'bold', fontSize: 10, halign: 'left' } },
+        { content: 'CANT.', styles: { fillColor: [21, 128, 61], textColor: 255, fontStyle: 'bold', fontSize: 10, halign: 'center' } },
+        { content: 'UNIDAD', styles: { fillColor: [21, 128, 61], textColor: 255, fontStyle: 'bold', fontSize: 10, halign: 'center' } }
+      ]],
+      body: filas,
+      theme: 'grid',
+      bodyStyles: { fontSize: 9, textColor: [30, 30, 30] },
+      columnStyles: {
+        0: { cellWidth: 130 },
+        1: { halign: 'center', cellWidth: 25 },
+        2: { halign: 'center', cellWidth: 30 },
+      },
+      alternateRowStyles: { fillColor: [248, 248, 248] },
+      margin: { left: 10, right: 10 }
+    })
+
+    cursorY = doc.lastAutoTable.finalY + 4
+  }
+
+  // MANO DE OBRA
+  const moFilas = (moPresup || []).map(m => {
+    const op = m.cantidad_operarios || 1
+    const totalHs = op * m.dias * m.horas_dia
+    const nombre = m.descripcion_tarea || `${m.operarios?.apellido||''}, ${m.operarios?.nombre||''}`.trim() || '—'
+    return [nombre, totalHs.toFixed(0), 'hs']
+  })
+  renderSeccion('MANO DE OBRA', moFilas)
+
+  // MATERIALES, EQUIPOS, SUBCONTRATOS, GASTOS
+  const labelCat = { materiales: 'MATERIALES', equipos: 'EQUIPOS', subcontratos: 'SUBCONTRATOS', gastos_grales: 'GASTOS GENERALES' }
+  ;['materiales', 'equipos', 'subcontratos', 'gastos_grales'].forEach(cat => {
+    const filas = (items || []).filter(i => i.categoria === cat).map(i => [i.descripcion, i.cantidad, i.unidad])
+    renderSeccion(labelCat[cat], filas)
+  })
+
+  // Total — verificar que haya lugar; si no, página nueva
+  if (cursorY > ph - 80) {
+    doc.addPage()
+    cursorY = 20
+  }
+  cursorY += 4
+
+  doc.setDrawColor(200).setLineWidth(0.3)
+  doc.line(10, cursorY, pw - 10, cursorY)
+
+  doc.setFontSize(16).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text('PRECIO TOTAL', 10, cursorY + 10)
+  doc.text(
+    `U$S ${resumen.precioVenta.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    pw - 10, cursorY + 10, { align: 'right' }
+  )
+
+  doc.setFontSize(10).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text(
+    `Equivalente: $ ${Math.round(resumen.precioVentaArs).toLocaleString('es-AR')} (T/C $${resumen.tc})`,
+    pw - 10, cursorY + 17, { align: 'right' }
+  )
+
+  // Modo de cobro por unidad
+  if (proyecto.modo_cobro === 'unidad' && proyecto.cantidad_unidad > 0) {
+    const precioUnidad = resumen.precioVenta / proyecto.cantidad_unidad
+    doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(80)
+    doc.text(
+      `Precio por ${proyecto.unidad_cobro}: U$S ${precioUnidad.toFixed(2)}  (total: ${proyecto.cantidad_unidad} ${proyecto.unidad_cobro})`,
+      10, cursorY + 20
+    )
+  }
+
+  doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(100)
+  doc.text('(Precios Netos / Más IVA)', 10, cursorY + 26)
+
+  // Condiciones
+  const cy = cursorY + 38
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.5)
+  doc.line(10, cy - 4, pw - 10, cy - 4)
+
+  doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text('CONDICIONES COMERCIALES', 10, cy + 2)
+
+  doc.setFont('helvetica', 'normal').setTextColor(60)
+  doc.text('Pago: A convenir', 10, cy + 8)
+  doc.text('Validez: 30 días corridos', pw / 2, cy + 8)
+  doc.text('T. Cambio: Dólar Oficial BNA', 10, cy + 14)
+
+  // Pie
+  const pieY = ph - 10
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.4)
+  doc.line(10, pieY - 6, pw - 10, pieY - 6)
+  doc.setFontSize(7).setTextColor(120)
+  doc.text(
+    `${empresa?.nombre || 'NODO'}  |  Santa Fe, Argentina`,
+    pw / 2, pieY, { align: 'center' }
+  )
+
+  const fname = `Proyecto_${(proyecto.nombre || 'sin_nombre').replace(/\s+/g, '_').replace(/[^\w\-]/g, '')}.pdf`
+  doc.save(fname)
+}

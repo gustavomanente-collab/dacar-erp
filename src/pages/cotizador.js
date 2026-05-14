@@ -109,9 +109,11 @@ items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
 
 // Ver si hay una cotización para editar
 const editar = sessionStorage.getItem('editar_cotizacion')
+let datosEditar = null
 if (editar) {
 sessionStorage.removeItem('editar_cotizacion')
-const datos = JSON.parse(editar)
+datosEditar = JSON.parse(editar)
+const datos = datosEditar
 
 // Pre-cargar cliente
 if (datos.cliente) {
@@ -176,15 +178,6 @@ opcional: esOpcional
 })
 }
 
-// Pre-cargar márgenes y renderizar después del HTML
-setTimeout(() => {
-const mkPan = document.getElementById('mk-pan')
-const dtoGer = document.getElementById('dto-ger')
-if (mkPan) mkPan.value = datos.margen_pct || 30
-if (dtoGer) dtoGer.value = datos.descuento_pct || 0
-renderItems()
-recalcular()
-}, 300)
 }
 
 const { data: empresas } = await supabase
@@ -319,7 +312,6 @@ contenedor.innerHTML = `
        <div class="grid grid-cols-2 gap-2 mb-3">
          <div>
            <label class="block text-xs text-purple-400 mb-1">% comisión</label>
-            <input id="comm-porc" type="number" value="25" min="0"
             <input id="comm-porc" type="number" value="25" min="0"
              class="w-full rounded-lg border-purple-200 text-sm" oninput="recalcular()" />
          </div>
@@ -623,10 +615,12 @@ document.getElementById('cli-sel').classList.add('hidden')
 
 // ── MODAL PANEL CHAPAS ────────────────────────────────────────────
 window.abrirModalPanel = () => {
+window._editandoIndex = null
 limpiarModalPanel()
 document.getElementById('modal-panel').classList.remove('hidden')
 }
 window.abrirModalM2 = () => {
+window._editandoIndex = null
 limpiarModalM2()
 document.getElementById('modal-m2').classList.remove('hidden')
 }
@@ -638,7 +632,8 @@ document.getElementById('ma-cant').value = ''
 document.getElementById('modal-acc').classList.remove('hidden')
 }
 window.cerrarModales = () => {
-['modal-panel','modal-m2','modal-acc'].forEach(id =>
+window._editandoIndex = null
+;['modal-panel','modal-m2','modal-acc'].forEach(id =>
 document.getElementById(id).classList.add('hidden'))
 }
 
@@ -1092,6 +1087,16 @@ sugEl.classList.remove('hidden')
 } else { sugEl.classList.add('hidden') }
 }
 
+// ── APLICAR DATOS DE EDICIÓN (DOM y handlers listos) ──
+if (datosEditar) {
+  const mkPan = document.getElementById('mk-pan')
+  const dtoGer = document.getElementById('dto-ger')
+  if (mkPan) mkPan.value = datosEditar.margen_pct || 30
+  if (dtoGer) dtoGer.value = datosEditar.descuento_pct || 0
+  renderItems()
+  recalcular()
+}
+
 // ── GUARDAR ───────────────────────────────────────────────────────
 document.getElementById('btn-guardar').addEventListener('click', async () => {
   if (!clienteId) { alert('Seleccioná un cliente'); return }
@@ -1184,7 +1189,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
 // Listener PDF
   if (btnPdf) {
     btnPdf.onclick = () => {
-      if (cotizacionGuardada) generarPDF(cotizacionGuardada)
+      if (cotizacionGuardada) generarPDF(cotizacionGuardada, empresaActual)
     }
   }
   // Enviar a Google Sheets
@@ -1194,7 +1199,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
       const commBase = document.getElementById('comm-base')?.value || 'utilidad'
       const utilidad = total - costoTot
       const commUsd = commBase === 'venta' ? total * commPorc : utilidad * commPorc
-      const empresa = empresas?.find(e => e.id === document.getElementById('sel-empresa')?.value)
+      const empresa = empresas?.find(e => e.id === document.getElementById('empresa-sel')?.value)
 
       const itemsSheets = items.map(it => {
         const venta = ventaItem(it)
@@ -1220,7 +1225,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
         cliente_nombre: clienteData.nombre,
         cliente_obra: clienteData.obra || '',
         empresa_nombre: empresa?.nombre || 'DACAR SRL',
-        vendedor: perfilGlobal?.full_name || '',
+        vendedor: window.perfilGlobal?.full_name || '',
         estado: 'borrador',
         costo_neto: parseFloat(costoTot.toFixed(2)),
         venta_bruta: parseFloat(ventaTot.toFixed(2)),
