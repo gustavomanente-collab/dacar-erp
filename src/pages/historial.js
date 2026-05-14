@@ -8,6 +8,9 @@ const ESTADOS = {
 }
 
 export async function renderHistorial(contenedor) {
+  // Limpiar modales huérfanos de visitas anteriores
+  document.querySelectorAll('[data-hist-modal]').forEach(m => m.remove())
+
   contenedor.innerHTML = `
     <div class="p-4 max-w-5xl mx-auto">
       <div class="flex items-center justify-between mb-4">
@@ -35,6 +38,14 @@ export async function renderHistorial(contenedor) {
       </div>
     </div>
   `
+// Cerrar modales al navegar a otra página
+const _navigate = window.navigate
+window.navigate = (p) => {
+  document.querySelectorAll('[data-hist-modal]').forEach(m => m.remove())
+  window.navigate = _navigate
+  _navigate(p)
+}
+
 document.getElementById('btn-sync-sheets').addEventListener('click', async () => {
     const btn = document.getElementById('btn-sync-sheets')
     btn.textContent = '⏳ Sincronizando...'
@@ -111,6 +122,9 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
     if (error) { alert('Error al cambiar estado'); return }
     const cot = todasLasCots.find(c => c.id === id)
     if (cot) cot.estado = nuevoEstado
+    // Cerrar modal y actualizar lista solo si todavía estamos en historial
+    document.querySelectorAll('[data-hist-modal]').forEach(m => m.remove())
+    if (!document.getElementById('lista-hist')) return
     renderLista(todasLasCots.filter(c => !filtroEstado || c.estado === filtroEstado))
   }
 
@@ -146,6 +160,7 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
     if (!cot || !items) return
 
     const modal = document.createElement('div')
+    modal.dataset.histModal = '1'
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;'
     modal.innerHTML = `
       <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:700px;max-height:85vh;overflow-y:auto;">
@@ -154,7 +169,7 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
             <h3 class="text-lg font-bold text-gray-900">Cotización #${String(cot.numero).padStart(3,'0')}</h3>
             <p class="text-sm text-gray-500">${cot.clientes?.nombre || ''} ${cot.clientes?.obra ? '· ' + cot.clientes.obra : ''}</p>
           </div>
-          <button onclick="this.closest('[style]').remove()"
+          <button onclick="this.closest('[data-hist-modal]').remove()"
             class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
         </div>
 
