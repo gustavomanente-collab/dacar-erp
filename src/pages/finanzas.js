@@ -97,8 +97,8 @@ contenedor.innerHTML = `
           const bruto = cot.total_bruto_usd || cot.total_final || 0
           const saldo = bruto - cobrado
           const pct = bruto > 0 ? Math.min(100, cobrado / bruto * 100) : 0
-          const color = saldo <= 0 ? 'bg-green-500' : cobrado > 0 ? 'bg-yellow-400' : 'bg-gray-300'
-          const estado = saldo <= 0 ? '✅ Cobrado' : cobrado > 0 ? '⏳ Parcial' : '🔴 Pendiente'
+          const color = saldo < 0 ? 'bg-orange-400' : saldo === 0 ? 'bg-green-500' : cobrado > 0 ? 'bg-yellow-400' : 'bg-gray-300'
+          const estado = saldo < 0 ? '⚠️ Pagó de más' : saldo === 0 ? '✅ Cobrado' : cobrado > 0 ? '⏳ Parcial' : '🔴 Pendiente'
           return `
             <div class="venta-card bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:border-green-300 transition-colors"
               onclick="abrirFichaVenta('${cot.id}')"
@@ -131,8 +131,8 @@ contenedor.innerHTML = `
                 <div class="text-right">
                   <p class="text-xs text-gray-400">${estado}</p>
                   <p class="font-bold text-green-700 text-sm">U$S ${bruto.toFixed(2)}</p>
-                  <p class="text-xs ${saldo > 0 ? 'text-red-500' : 'text-green-600'}">
-                    ${saldo > 0 ? `Saldo: U$S ${saldo.toFixed(2)}` : 'Cancelado'}
+                  <p class="text-xs ${saldo > 0 ? 'text-red-500' : saldo < 0 ? 'text-orange-600 font-semibold' : 'text-green-600'}">
+                    ${saldo > 0 ? `Saldo: U$S ${saldo.toFixed(2)}` : saldo < 0 ? `Devolver: U$S ${Math.abs(saldo).toFixed(2)}` : 'Cancelado'}
                   </p>
                 </div>
               </div>
@@ -188,11 +188,17 @@ contenedor.innerHTML = `
               <p class="text-xs text-blue-600">Cobrado</p>
               <p class="font-black text-blue-700">U$S ${totalCobrado.toFixed(2)}</p>
             </div>
-            <div class="bg-${saldo > 0 ? 'red' : 'gray'}-50 border border-${saldo > 0 ? 'red' : 'gray'}-200 rounded-lg p-3 text-center">
-              <p class="text-xs text-${saldo > 0 ? 'red' : 'gray'}-600">Saldo</p>
-              <p class="font-black text-${saldo > 0 ? 'red' : 'gray'}-700">U$S ${saldo.toFixed(2)}</p>
+            <div class="bg-${saldo > 0 ? 'red' : saldo < 0 ? 'orange' : 'gray'}-50 border border-${saldo > 0 ? 'red' : saldo < 0 ? 'orange' : 'gray'}-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-${saldo > 0 ? 'red' : saldo < 0 ? 'orange' : 'gray'}-600">${saldo < 0 ? 'Pagó de más' : 'Saldo'}</p>
+              <p class="font-black text-${saldo > 0 ? 'red' : saldo < 0 ? 'orange' : 'gray'}-700">U$S ${saldo.toFixed(2)}</p>
             </div>
           </div>
+
+          ${saldo < 0 ? `
+          <div class="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4 text-sm text-orange-800">
+            ⚠️ El cliente pagó U$S ${Math.abs(saldo).toFixed(2)} de más. Quedan pendientes de devolver — registralo abajo como devolución (monto en negativo) para que el saldo quede en cero.
+          </div>
+          ` : ''}
 
           <div class="bg-gray-100 rounded-full h-3 mb-4">
             <div class="${saldo <= 0 ? 'bg-green-500' : 'bg-yellow-400'} h-3 rounded-full"
@@ -215,9 +221,9 @@ contenedor.innerHTML = `
                   ${cobrosVenta.map((c, i) => `
                     <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
                       <td class="px-2 py-1">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
-                      <td class="px-2 py-1">${c.concepto || ''}</td>
+                      <td class="px-2 py-1">${(c.monto_usd||0) < 0 ? '↩️ ' : ''}${c.concepto || ''}</td>
                       <td class="px-2 py-1">${c.tipo_pago}</td>
-                      <td class="px-2 py-1 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                      <td class="px-2 py-1 text-right font-bold ${(c.monto_usd||0) < 0 ? 'text-orange-600' : 'text-green-700'}">U$S ${(c.monto_usd||0).toFixed(2)}</td>
                       <td class="px-2 py-1 text-right text-blue-600">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                       <td class="px-2 py-1 text-center">
                         ${esGerencia || esAdmin ? `<button onclick="borrarCobroFicha('${c.id}', '${cotId}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>` : ''}
@@ -253,9 +259,9 @@ contenedor.innerHTML = `
           </div>
           ` : ''}
 
-          ${saldo > 0 && (esGerencia || esAdmin) ? `
+          ${esGerencia || esAdmin ? `
           <div class="border-t pt-4">
-            <h4 class="font-semibold text-gray-700 text-sm mb-2">Registrar cobro</h4>
+            <h4 class="font-semibold text-gray-700 text-sm mb-2">${saldo < 0 ? 'Registrar devolución al cliente' : 'Registrar cobro'}</h4>
             <div class="grid grid-cols-2 gap-2 mb-2">
               <div>
                 <label class="block text-xs text-gray-500 mb-1">Fecha</label>
@@ -264,8 +270,9 @@ contenedor.innerHTML = `
               </div>
               <div>
                 <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
-                <input id="ficha-monto" type="number" min="0" step="0.01" placeholder="${saldo.toFixed(2)}"
+                <input id="ficha-monto" type="number" step="0.01" placeholder="${saldo < 0 ? (-Math.abs(saldo)).toFixed(2) : saldo.toFixed(2)}"
                   class="w-full rounded border-gray-300 text-xs" />
+                <p class="text-[10px] text-gray-400 mt-0.5">Negativo = devolución al cliente</p>
               </div>
               <div>
                 <label class="block text-xs text-gray-500 mb-1">Forma de pago</label>
@@ -288,13 +295,13 @@ contenedor.innerHTML = `
                   class="w-full rounded border-gray-300 text-xs" />
               </div>
                 <label class="block text-xs text-gray-500 mb-1">Concepto</label>
-                <input id="ficha-concepto" type="text" placeholder="Anticipo, saldo..."
+                <input id="ficha-concepto" type="text" placeholder="${saldo < 0 ? 'Devolución por pago de más' : 'Anticipo, saldo...'}"
                   class="w-full rounded border-gray-300 text-xs" />
               </div>
             </div>
             <button onclick="cobrarFicha('${cot.id}', '${cot.cliente_id}')"
-              class="w-full bg-green-700 hover:bg-green-900 text-white text-sm font-medium py-2 rounded-lg">
-              💰 Registrar cobro
+              class="w-full ${saldo < 0 ? 'bg-orange-600 hover:bg-orange-800' : 'bg-green-700 hover:bg-green-900'} text-white text-sm font-medium py-2 rounded-lg">
+              ${saldo < 0 ? '↩️ Registrar devolución' : '💰 Registrar cobro'}
             </button>
             <p id="ficha-msg" class="hidden text-xs text-green-700 mt-1 text-center"></p>
           </div>
@@ -419,9 +426,9 @@ window.borrarCobroFicha = async (id, cotId) => {
                 <td class="px-3 py-2">${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
                 <td class="px-3 py-2 font-medium">${c.clientes?.nombre || ''}</td>
                 <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
-                <td class="px-3 py-2">${c.concepto || ''}</td>
+                <td class="px-3 py-2">${(c.monto_usd||0) < 0 ? '↩️ ' : ''}${c.concepto || ''}</td>
                 <td class="px-3 py-2">${c.tipo_pago}</td>
-                <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-bold ${(c.monto_usd||0) < 0 ? 'text-orange-600' : 'text-green-700'}">U$S ${(c.monto_usd||0).toFixed(2)}</td>
                 <td class="px-3 py-2 text-right text-blue-700">$ ${Math.round(c.monto_ars||0).toLocaleString('es-AR')}</td>
                 <td class="px-3 py-2 text-center text-gray-500">${c.tc || '-'}</td>
                 <td class="px-3 py-2 text-center">
