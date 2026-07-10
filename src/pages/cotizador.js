@@ -729,10 +729,8 @@ document.getElementById(`${prefijo}-color-blq`).classList.remove('hidden')
 function getPrecio(modelo, espesor, prefijo) {
 const foilInt = db[modelo]?.foilInt
 const extVal = document.getElementById(`${prefijo}-ext`).value
-const intVal = foilInt ? null : document.getElementById(`${prefijo}-int`).value
 if (!extVal) return null
-const term = foilInt ? `FO/${extVal}` : `PR/${intVal || ''}`
-if (!intVal && !foilInt) return null
+const term = foilInt ? `FO/${extVal}` : `PR/${extVal}`
 return db[modelo]?.data[espesor]?.[term] || null
 }
 
@@ -1033,41 +1031,38 @@ window.editarPanel = (i) => {
 const it = items[i]
 if (!it || it.tipo !== 'panel') return
 
-// Abrir modal y precargar datos
-limpiarModalPanel()
-document.getElementById('modal-panel').classList.remove('hidden')
+// Reabrir el mismo modal con el que se cargó (chapas×largo o m² directo)
+const pfx = it.chapas ? 'mp' : 'mm'
+const modalId = pfx === 'mp' ? 'modal-panel' : 'modal-m2'
+
+if (pfx === 'mp') limpiarModalPanel(); else limpiarModalM2()
+document.getElementById(modalId).classList.remove('hidden')
 
 setTimeout(() => {
-const selModelo = document.getElementById('mp-modelo')
+const selModelo = document.getElementById(`${pfx}-modelo`)
 selModelo.value = it.modelo
-mpModelo()
+window[`${pfx}Modelo`]()
 
 setTimeout(() => {
-const selEsp = document.getElementById('mp-esp')
+const selEsp = document.getElementById(`${pfx}-esp`)
 selEsp.value = it.espesor
-mpEsp()
+window[`${pfx}Esp`]()
 
 setTimeout(() => {
-const foilInt = db[it.modelo]?.foilInt
-if (foilInt) {
 const extCode = it.term.split('/')[1]
-document.getElementById('mp-ext').value = extCode
-document.getElementById('mp-color-blq').classList.toggle('hidden', extCode !== 'PR')
+document.getElementById(`${pfx}-ext`).value = extCode
+window[`${pfx}Ext`]()
 if (extCode === 'PR' && it.color) {
-document.getElementById('mp-color').value = it.color
+document.getElementById(`${pfx}-color`).value = it.color
 }
-} else {
-const intCode = it.term.split('/')[1]
-document.getElementById('mp-int').value = intCode
-if (it.color) document.getElementById('mp-color').value = it.color
-}
-mpCalcPrecio()
 
-if (it.chapas) {
+if (pfx === 'mp') {
 document.getElementById('mp-cant').value = it.chapas
 document.getElementById('mp-largo').value = it.largo
-}
 mpCalcM2()
+} else {
+document.getElementById('mm-m2').value = it.m2
+}
 
 // Al confirmar, reemplaza el ítem en lugar de agregar
 window._editandoIndex = i
