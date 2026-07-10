@@ -178,19 +178,25 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
             <tr class="bg-gray-900 text-white">
               <th class="px-3 py-2 text-left text-xs">Descripción</th>
               <th class="px-2 py-2 text-center text-xs">Cant/m²</th>
+              <th class="px-2 py-2 text-right text-xs">Costo U$S/m²</th>
               <th class="px-2 py-2 text-right text-xs">Precio U$S</th>
               <th class="px-2 py-2 text-right text-xs">Subtotal</th>
             </tr>
           </thead>
           <tbody>
-            ${items.map((it, i) => `
+            ${items.map((it, i) => {
+              let extra = {}
+              try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
+              const costoUnit = extra.costo_unit || 0
+              return `
               <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
                 <td class="px-3 py-2 text-xs text-gray-700">${it.descripcion}</td>
                 <td class="px-2 py-2 text-center text-xs">${it.cantidad}</td>
+                <td class="px-2 py-2 text-right text-xs text-sky-700">${costoUnit ? 'U$S ' + costoUnit.toFixed(2) : '-'}</td>
                 <td class="px-2 py-2 text-right text-xs">U$S ${(it.precio_unitario || 0).toFixed(2)}</td>
                 <td class="px-2 py-2 text-right text-xs font-semibold">U$S ${(it.cantidad * it.precio_unitario).toFixed(2)}</td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
 
