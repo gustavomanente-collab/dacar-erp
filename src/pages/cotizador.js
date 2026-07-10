@@ -100,6 +100,7 @@ return 15
 
 let items = []
 let clienteId = null, clienteData = null, cotizacionGuardada = null
+let panelSesion = []
 
 export async function renderCotizador(contenedor) {
 const { data: lastCot } = await supabase
@@ -459,10 +460,11 @@ contenedor.innerHTML = `
          </div>
        </div>
        <div class="text-xs text-gray-400">m² calculados: <span id="mp-m2" class="font-bold text-gray-700">--</span></div>
+       <div id="mp-sesion" class="hidden text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2 leading-relaxed"></div>
      </div>
      <div class="flex gap-3 mt-5">
-       <button onclick="cerrarModales()" class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
-       <button onclick="confirmarPanel(false)" class="flex-1 bg-blue-700 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+       <button onclick="cerrarModales()" class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cerrar</button>
+       <button onclick="confirmarPanel(false)" class="flex-1 bg-blue-700 text-white py-2 rounded-lg text-sm font-bold">Agregar medida</button>
      </div>
    </div>
  </div>
@@ -674,6 +676,7 @@ document.getElementById('mp-precio').textContent = '---'
 document.getElementById('mp-cant').value = ''
 document.getElementById('mp-largo').value = ''
 document.getElementById('mp-m2').textContent = '--'
+resetSesionPanel()
 }
 
 function limpiarModalM2() {
@@ -735,6 +738,12 @@ return db[modelo]?.data[espesor]?.[term] || null
 }
 
 // Modal panel chapas
+function resetSesionPanel() {
+panelSesion = []
+const sesionEl = document.getElementById('mp-sesion')
+sesionEl.classList.add('hidden')
+sesionEl.innerHTML = ''
+}
 window.mpModelo = () => {
 const m = document.getElementById('mp-modelo').value
 const selEsp = document.getElementById('mp-esp')
@@ -744,12 +753,14 @@ document.getElementById('mp-int-blq').classList.add('hidden')
 document.getElementById('mp-int-fijo').classList.add('hidden')
 document.getElementById('mp-color-blq').classList.add('hidden')
 document.getElementById('mp-precio').textContent = '---'
+resetSesionPanel()
 if (!m) return
 Object.keys(db[m].data).forEach(e => selEsp.add(new Option(e + ' mm', e)))
 }
 window.mpEsp = () => {
 const m = document.getElementById('mp-modelo').value
 const e = document.getElementById('mp-esp').value
+resetSesionPanel()
 if (!m || !e) return
 buildTermOpts(m, e, 'mp')
 mpCalcPrecio()
@@ -858,14 +869,31 @@ m2val = parseFloat((chapas * largo * db[m].ancho).toFixed(2))
 const nuevoItem = { tipo: 'panel', descripcion: desc, modelo: m, espesor: e, term, color,
 m2: m2val, chapas, largo, costo_unit: costo, dto: 0, opcional: false }
 
-if (window._editandoIndex !== undefined && window._editandoIndex !== null) {
+const editando = window._editandoIndex !== undefined && window._editandoIndex !== null
+if (editando) {
 items[window._editandoIndex] = nuevoItem
 window._editandoIndex = null
 } else {
 items.push(nuevoItem)
 }
 
-cerrarModales(); renderItems(); recalcular()  }
+renderItems(); recalcular()
+
+if (editando || esM2directo) {
+cerrarModales()
+} else {
+// Mismo modelo/espesor/terminación: dejar el modal abierto para seguir cargando medidas
+panelSesion.push(`${chapas} chapa${chapas === 1 ? '' : 's'} x ${largo}m (${m2val} m²)`)
+const sesionEl = document.getElementById('mp-sesion')
+sesionEl.classList.remove('hidden')
+sesionEl.innerHTML = `✅ ${panelSesion.length} medida${panelSesion.length === 1 ? '' : 's'} cargada${panelSesion.length === 1 ? '' : 's'} de ${m} ${e}mm:<br>` +
+panelSesion.map(s => `• ${s}`).join('<br>')
+document.getElementById('mp-cant').value = ''
+document.getElementById('mp-largo').value = ''
+document.getElementById('mp-m2').textContent = '--'
+document.getElementById('mp-cant').focus()
+}
+}
 
 // Modal accesorio
 window.maSelChange = () => {
