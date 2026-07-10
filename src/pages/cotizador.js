@@ -405,9 +405,9 @@ contenedor.innerHTML = `
 
  <!-- MODAL PANEL CHAPAS -->
  <div id="modal-panel" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-   <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4">
+   <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
      <h3 class="font-bold text-gray-900 mb-4">Agregar panel (chapas × largo)</h3>
-     <div class="space-y-3">
+     <div class="space-y-3 overflow-y-auto pr-1 flex-1 min-h-0">
        <div>
          <label class="block text-xs text-gray-500 mb-1">Modelo</label>
          <select id="mp-modelo" class="w-full rounded-lg border-gray-300 text-sm" onchange="mpModelo()">
