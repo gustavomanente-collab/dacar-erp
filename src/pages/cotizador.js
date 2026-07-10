@@ -210,8 +210,13 @@ contenedor.innerHTML = `
        </div>
        <div>
          <label class="block text-xs text-gray-400 mb-1">Dólar $/U$S</label>
-         <input id="campo-tc" type="number" value="1150"
-           class="w-full rounded-lg border-gray-200 text-sm font-bold" oninput="recalcular()" />
+         <div class="flex items-center gap-1">
+           <input id="campo-tc" type="number" value="1150"
+             class="w-full rounded-lg border-gray-200 text-sm font-bold" oninput="recalcular()" />
+           <button type="button" onclick="actualizarDolar()" title="Actualizar cotización"
+             class="shrink-0 text-gray-400 hover:text-gray-700 text-sm px-1">🔄</button>
+         </div>
+         <p id="tc-status" class="text-[10px] text-gray-400 mt-0.5">&nbsp;</p>
        </div>
      </div>
 
@@ -601,6 +606,25 @@ document.getElementById('cli-nombre').textContent = clienteData.nombre
 document.getElementById('cli-obra').textContent = clienteData.obra ? '| ' + clienteData.obra : ''
 document.getElementById('cli-sel').classList.remove('hidden')
 }
+// ── DÓLAR OFICIAL EN VIVO ────────────────────────────────────────
+window.actualizarDolar = async () => {
+const statusEl = document.getElementById('tc-status')
+if (statusEl) statusEl.textContent = 'Actualizando...'
+try {
+const resp = await fetch('https://dolarapi.com/v1/dolares/oficial')
+if (!resp.ok) throw new Error('respuesta no ok')
+const data = await resp.json()
+const valor = Math.round(data.venta)
+if (!valor) throw new Error('sin valor')
+document.getElementById('campo-tc').value = valor
+recalcular()
+if (statusEl) statusEl.textContent = `Oficial ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`
+} catch (e) {
+if (statusEl) statusEl.textContent = 'No se pudo actualizar, cargá el valor a mano'
+}
+}
+actualizarDolar()
+
 window.selCli = (id, nombre, obra, dir) => {
 clienteId = id; clienteData = { nombre, obra, dir }
 document.getElementById('cli-nombre').textContent = nombre
