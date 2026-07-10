@@ -30,6 +30,10 @@ contenedor.innerHTML = `
         <button onclick="tabFin('calce')" id="tab-calce"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           ⚖️ Calce
+        </button>
+        <button onclick="tabFin('rentabilidad')" id="tab-rentabilidad"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          📈 Rentabilidad
         </button>` : ''}
         ${esGerencia || esAdmin ? `
         <button onclick="window.abrirSimuladorFlujo()"
@@ -41,7 +45,7 @@ contenedor.innerHTML = `
     </div>
   `
   window.tabFin = (tab) => {
-    ;['pendientes','cobros','proveedor','comisiones'].forEach(t => {
+    ;['pendientes','cobros','proveedor','comisiones','calce','rentabilidad'].forEach(t => {
       const btn = document.getElementById(`tab-${t}`)
       // ESCUDO: Solo cambia el color si el botón existe en la pantalla para este rol
       if (btn) {
@@ -50,11 +54,12 @@ contenedor.innerHTML = `
           : 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700'
       }
     })
-    if (tab === 'pendientes')  renderPendientes()
-    if (tab === 'cobros')      renderCobros()
-    if (tab === 'proveedor')   renderProveedor()
-    if (tab === 'comisiones')  renderComisiones()
-    if (tab === 'calce')       renderCalce()
+    if (tab === 'pendientes')    renderPendientes()
+    if (tab === 'cobros')        renderCobros()
+    if (tab === 'proveedor')     renderProveedor()
+    if (tab === 'comisiones')    renderComisiones()
+    if (tab === 'calce')         renderCalce()
+    if (tab === 'rentabilidad')  renderRentabilidad()
   }
 
   async function renderPendientes() {
@@ -789,6 +794,177 @@ async function renderCalce() {
         </div>
       `
     }
+  }
+
+  async function renderRentabilidad() {
+    const el = document.getElementById('fin-content')
+    el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
+
+    const { data: cots } = await supabase
+      .from('cotizaciones')
+      .select('*, clientes(nombre, obra)')
+      .eq('estado', 'aprobada')
+      .order('created_at')
+
+    if (!cots?.length) {
+      el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay ventas aprobadas todavía.</p>'
+      return
+    }
+
+    const { data: items } = await supabase
+      .from('cotizacion_items')
+      .select('cotizacion_id, descripcion, cantidad, precio_unitario, notas')
+      .in('cotizacion_id', cots.map(c => c.id))
+
+    const porCot = cots.map(c => {
+      const venta    = c.total_bruto_usd || c.total_final || 0
+      const costo    = c.total_neto || 0
+      const utilidad = venta - costo
+      const margen   = venta > 0 ? utilidad / venta * 100 : 0
+      return { ...c, venta, costo, utilidad, margen }
+    })
+
+    const hoy = new Date()
+    const mesActual = hoy.getMonth(), anioActual = hoy.getFullYear()
+    const esMesActual = f => { const d = new Date(f); return d.getMonth() === mesActual && d.getFullYear() === anioActual }
+
+    const ventaTotal    = porCot.reduce((s, c) => s + c.venta, 0)
+    const utilidadTotal = porCot.reduce((s, c) => s + c.utilidad, 0)
+    const margenProm    = ventaTotal > 0 ? utilidadTotal / ventaTotal * 100 : 0
+    const utilidadMes   = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidad, 0)
+
+    // Utilidad por mes (últimos 6 meses)
+    const porMes = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(anioActual, mesActual - i, 1)
+      const mes = d.getMonth(), anio = d.getFullYear()
+      const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' })
+      const delMes = porCot.filter(c => {
+        const cd = new Date(c.created_at)
+        return cd.getMonth() === mes && cd.getFullYear() === anio
+      })
+      porMes.push({
+        label,
+        venta: delMes.reduce((s, c) => s + c.venta, 0),
+        utilidad: delMes.reduce((s, c) => s + c.utilidad, 0)
+      })
+    }
+    const maxVal = Math.max(...porMes.map(v => Math.max(v.venta, v.utilidad)), 1)
+
+    // Ranking por cliente
+    const porCliente = {}
+    porCot.forEach(c => {
+      const nombre = c.clientes?.nombre || 'Sin cliente'
+      if (!porCliente[nombre]) porCliente[nombre] = { nombre, venta: 0, utilidad: 0, cant: 0 }
+      porCliente[nombre].venta    += c.venta
+      porCliente[nombre].utilidad += c.utilidad
+      porCliente[nombre].cant     += 1
+    })
+    const rankingClientes = Object.values(porCliente).sort((a, b) => b.utilidad - a.utilidad).slice(0, 10)
+
+    // Ranking por modelo de panel
+    const porModelo = {}
+    ;(items || []).forEach(it => {
+      if (it.descripcion?.includes('[OPCIONAL]')) return
+      let extra = {}
+      try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
+      if (extra.tipo !== 'panel' || !extra.modelo) return
+      const cant     = parseFloat(it.cantidad) || 0
+      const venta    = cant * (parseFloat(it.precio_unitario) || 0)
+      const costo    = cant * (extra.costo_unit || 0)
+      if (!porModelo[extra.modelo]) porModelo[extra.modelo] = { modelo: extra.modelo, venta: 0, utilidad: 0, m2: 0 }
+      porModelo[extra.modelo].venta    += venta
+      porModelo[extra.modelo].utilidad += venta - costo
+      porModelo[extra.modelo].m2       += cant
+    })
+    const rankingModelos = Object.values(porModelo).sort((a, b) => b.utilidad - a.utilidad)
+
+    el.innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-green-600 font-medium mb-1">Utilidad histórica</p>
+          <p class="text-xl font-black text-green-700">U$S ${utilidadTotal.toFixed(0)}</p>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-blue-600 font-medium mb-1">Utilidad del mes</p>
+          <p class="text-xl font-black text-blue-700">U$S ${utilidadMes.toFixed(0)}</p>
+        </div>
+        <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-purple-600 font-medium mb-1">Margen promedio</p>
+          <p class="text-xl font-black text-purple-700">${margenProm.toFixed(1)}%</p>
+        </div>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
+        <h3 class="font-semibold text-gray-700 mb-4 text-sm">Venta vs Utilidad — últimos 6 meses</h3>
+        <div class="flex items-end gap-3 h-40">
+          ${porMes.map(v => `
+            <div class="flex-1 flex flex-col items-center gap-1">
+              <div class="w-full flex gap-1 items-end" style="height:120px">
+                <div class="flex-1 bg-emerald-300 rounded-t" style="height:${v.venta > 0 ? Math.max(4, v.venta/maxVal*120) : 0}px" title="Venta: U$S ${v.venta.toFixed(0)}"></div>
+                <div class="flex-1 bg-green-600 rounded-t" style="height:${v.utilidad > 0 ? Math.max(4, v.utilidad/maxVal*120) : 0}px" title="Utilidad: U$S ${v.utilidad.toFixed(0)}"></div>
+              </div>
+              <p class="text-xs text-gray-400">${v.label}</p>
+            </div>
+          `).join('')}
+        </div>
+        <div class="flex gap-4 mt-3">
+          <div class="flex items-center gap-1"><div class="w-3 h-3 bg-emerald-300 rounded"></div><span class="text-xs text-gray-500">Venta</span></div>
+          <div class="flex items-center gap-1"><div class="w-3 h-3 bg-green-600 rounded"></div><span class="text-xs text-gray-500">Utilidad</span></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div class="bg-gray-50 px-4 py-3 border-b">
+            <h4 class="font-semibold text-gray-700 text-sm">Ranking de clientes por utilidad</h4>
+          </div>
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-center">Pptos</th>
+              <th class="px-3 py-2 text-right">Utilidad</th>
+              <th class="px-3 py-2 text-right">Margen</th>
+            </tr></thead>
+            <tbody>
+              ${rankingClientes.map((c, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2">${c.nombre}</td>
+                  <td class="px-3 py-2 text-center text-gray-500">${c.cant}</td>
+                  <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${c.utilidad.toFixed(0)}</td>
+                  <td class="px-3 py-2 text-right text-gray-500">${c.venta > 0 ? (c.utilidad/c.venta*100).toFixed(1) : '0.0'}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div class="bg-gray-50 px-4 py-3 border-b">
+            <h4 class="font-semibold text-gray-700 text-sm">Ranking por modelo de panel</h4>
+          </div>
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">Modelo</th>
+              <th class="px-3 py-2 text-center">m²</th>
+              <th class="px-3 py-2 text-right">Utilidad</th>
+              <th class="px-3 py-2 text-right">Margen</th>
+            </tr></thead>
+            <tbody>
+              ${rankingModelos.map((m, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-medium">${m.modelo}</td>
+                  <td class="px-3 py-2 text-center text-gray-500">${m.m2.toFixed(0)}</td>
+                  <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${m.utilidad.toFixed(0)}</td>
+                  <td class="px-3 py-2 text-right text-gray-500">${m.venta > 0 ? (m.utilidad/m.venta*100).toFixed(1) : '0.0'}%</td>
+                </tr>
+              `).join('')}
+              ${!rankingModelos.length ? '<tr><td colspan="4" class="text-center text-gray-400 py-4">Sin datos de paneles.</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
   }
 
   async function renderComisiones() {
