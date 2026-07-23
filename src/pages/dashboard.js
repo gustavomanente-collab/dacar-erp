@@ -120,7 +120,79 @@ export async function renderDashboard(contenedor) {
     .filter(c => c.saldo > 0)
     .slice(0, 5)
 
+  // ── ALERTAS (beta) — reglas simples sobre datos ya cargados, sin costo de API ──
+  const cotsAprobadas = (cotizaciones || []).filter(c => c.estado === 'aprobada')
+
+  const margenes = cotsAprobadas
+    .map(c => {
+      const bruto = c.total_bruto_usd || c.total_final || 0
+      const util  = (c.total_final || 0) - (c.total_neto || 0)
+      return bruto > 0 ? util / bruto * 100 : null
+    })
+    .filter(m => m !== null)
+  const margenProm = margenes.length ? margenes.reduce((s, m) => s + m, 0) / margenes.length : 0
+
+  const alertas = []
+  const hoyMs = hoy.getTime()
+
+  cotsAprobadas.forEach(c => {
+    const nro = `2026-${String(c.numero).padStart(3,'0')}`
+    const nombreCli = c.clientes?.nombre || 'Cliente sin nombre'
+    const bruto = c.total_bruto_usd || c.total_final || 0
+    const cobrado = (cobros || [])
+      .filter(x => x.cotizacion_id === c.id)
+      .reduce((s, x) => s + (x.monto_usd || 0), 0)
+    const saldo = bruto - cobrado
+
+    if (saldo < -0.01) {
+      alertas.push({
+        color: 'orange', icono: '⚠️',
+        texto: `${nombreCli} pagó U$S ${Math.abs(saldo).toFixed(2)} de más en ${nro} — falta registrar la devolución.`
+      })
+    }
+
+    const util   = (c.total_final || 0) - (c.total_neto || 0)
+    const margen = bruto > 0 ? util / bruto * 100 : null
+    if (margen !== null && margenProm > 0 && margen < margenProm - 10) {
+      alertas.push({
+        color: 'yellow', icono: '📉',
+        texto: `${nro} — ${nombreCli}: margen de ${margen.toFixed(1)}% (promedio ${margenProm.toFixed(1)}%).`
+      })
+    }
+
+    const diasDesdeCreacion = (hoyMs - new Date(c.created_at).getTime()) / 86400000
+    if (saldo > 0.01 && diasDesdeCreacion > 30) {
+      alertas.push({
+        color: 'red', icono: '🔴',
+        texto: `${nro} — ${nombreCli}: saldo de U$S ${saldo.toFixed(2)} pendiente hace ${Math.floor(diasDesdeCreacion)} días.`
+      })
+    }
+  })
+
   document.getElementById('dash-content').innerHTML = `
+
+    ${alertas.length ? `
+    <!-- Alertas (beta) -->
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-6">
+      <div class="bg-gray-900 px-4 py-3 flex items-center justify-between">
+        <h3 class="font-semibold text-white text-sm">🔔 Alertas (${alertas.length}) <span class="text-gray-400 text-xs font-normal">· beta, reglas automáticas</span></h3>
+      </div>
+      <div class="divide-y divide-gray-100">
+        ${alertas.map(a => {
+          const estilos = {
+            orange: 'bg-orange-50 text-orange-800',
+            red:    'bg-red-50 text-red-800',
+            yellow: 'bg-yellow-50 text-yellow-800',
+          }
+          return `
+          <div class="px-4 py-2.5 flex items-center gap-2 ${estilos[a.color]}">
+            <span>${a.icono}</span>
+            <p class="text-xs">${a.texto}</p>
+          </div>
+        `}).join('')}
+      </div>
+    </div>
+    ` : ''}
 
     <!-- KPIs principales -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
