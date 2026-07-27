@@ -956,30 +956,16 @@ const cotId = document.getElementById('prov-cot').value
 
           ${saldo > 0.01 ? `
           <div class="border-t pt-4">
-            <h4 class="font-semibold text-gray-700 text-sm mb-2">Registrar pago</h4>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Fecha</label>
-                <input id="fcp-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full rounded border-gray-300 text-xs" />
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
-                <input id="fcp-monto" type="text" inputmode="decimal" placeholder="${saldo.toFixed(2)}" class="w-full rounded border-gray-300 text-xs" />
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Forma de pago</label>
-                <select id="fcp-forma" class="w-full rounded border-gray-300 text-xs">
-                  <option value="transferencia">Transferencia</option>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="otro">Otro</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">N° Cheque (opcional)</label>
-                <input id="fcp-cheque" type="text" placeholder="Ej: 12345678" class="w-full rounded border-gray-300 text-xs" />
-              </div>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="font-semibold text-gray-700 text-sm">Registrar pago</h4>
+              <button onclick="agregarLineaPago()" class="text-xs text-blue-600 hover:underline">+ Agregar cheque/pago</button>
             </div>
+            <div>
+              <label class="block text-xs text-gray-500 mb-1">Fecha del pago</label>
+              <input id="fcp-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full rounded border-gray-300 text-xs mb-2" />
+            </div>
+            <div id="lineas-pago-cont" class="space-y-2 mb-2"></div>
+            <p class="text-xs text-gray-400 mb-2">Saldo a cubrir: U$S ${saldo.toFixed(2)}</p>
             <button onclick="registrarPagoFactura('${facturaId}')"
               class="w-full bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium py-2 rounded-lg">
               💾 Registrar pago
@@ -995,19 +981,78 @@ const cotId = document.getElementById('prov-cot').value
       document.body.appendChild(modal)
       modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
 
+      // ── Líneas de pago (uno o varios cheques/formas de pago por cada registro) ──
+      let lineasPago = [{ tipo: 'transferencia', monto: '', cheque: '', facred: new Date().toISOString().split('T')[0] }]
+
+      function renderLineasPago() {
+        const cont = document.getElementById('lineas-pago-cont')
+        if (!cont) return
+        cont.innerHTML = lineasPago.map((l, i) => `
+          <div class="grid grid-cols-4 gap-2 items-end bg-gray-50 rounded-lg p-2">
+            <div>
+              <label class="block text-[10px] text-gray-500 mb-1">Forma de pago</label>
+              <select class="w-full rounded border-gray-300 text-xs" onchange="editLineaPago(${i}, 'tipo', this.value)">
+                <option value="transferencia" ${l.tipo === 'transferencia' ? 'selected' : ''}>Transferencia</option>
+                <option value="efectivo" ${l.tipo === 'efectivo' ? 'selected' : ''}>Efectivo</option>
+                <option value="cheque" ${l.tipo === 'cheque' ? 'selected' : ''}>Cheque</option>
+                <option value="otro" ${l.tipo === 'otro' ? 'selected' : ''}>Otro</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-gray-500 mb-1">Monto U$S</label>
+              <input type="text" inputmode="decimal" value="${l.monto}" placeholder="0.00"
+                class="w-full rounded border-gray-300 text-xs" oninput="editLineaPago(${i}, 'monto', this.value)" />
+            </div>
+            ${l.tipo === 'cheque' ? `
+            <div>
+              <label class="block text-[10px] text-gray-500 mb-1">N° Cheque</label>
+              <input type="text" value="${l.cheque}" placeholder="Ej: 12345678"
+                class="w-full rounded border-gray-300 text-xs" oninput="editLineaPago(${i}, 'cheque', this.value)" />
+            </div>
+            <div>
+              <label class="block text-[10px] text-gray-500 mb-1">Fecha acreditación</label>
+              <input type="date" value="${l.facred}"
+                class="w-full rounded border-gray-300 text-xs" onchange="editLineaPago(${i}, 'facred', this.value)" />
+            </div>
+            ` : '<div class="col-span-2"></div>'}
+            <div class="col-span-4 text-right">
+              ${lineasPago.length > 1 ? `<button onclick="quitarLineaPago(${i})" class="text-red-400 hover:text-red-600 text-xs font-bold">✕ Quitar</button>` : ''}
+            </div>
+          </div>
+        `).join('')
+      }
+      renderLineasPago()
+
+      window.editLineaPago = (i, campo, valor) => {
+        lineasPago[i][campo] = valor
+        if (campo === 'tipo') renderLineasPago()
+      }
+      window.agregarLineaPago = () => {
+        lineasPago.push({ tipo: 'transferencia', monto: '', cheque: '', facred: new Date().toISOString().split('T')[0] })
+        renderLineasPago()
+      }
+      window.quitarLineaPago = (i) => {
+        lineasPago.splice(i, 1)
+        renderLineasPago()
+      }
+
       window.registrarPagoFactura = async (fId) => {
-        const monto = parseMontoAR(document.getElementById('fcp-monto').value)
-        if (!monto) { alert('Ingresá el monto'); return }
-        const { error } = await supabase.from('pagos_proveedor').insert({
-          fecha: document.getElementById('fcp-fecha').value,
-          fecha_acreditacion: document.getElementById('fcp-fecha').value,
-          nro_cheque: document.getElementById('fcp-cheque')?.value || null,
-          monto_usd: monto,
-          tipo_pago: document.getElementById('fcp-forma').value,
+        const fechaPago = document.getElementById('fcp-fecha').value
+        const filas = lineasPago
+          .map(l => ({ monto: parseMontoAR(l.monto), tipo: l.tipo, cheque: l.cheque, facred: l.facred }))
+          .filter(l => l.monto > 0)
+        if (!filas.length) { alert('Ingresá al menos un monto'); return }
+
+        const { error } = await supabase.from('pagos_proveedor').insert(filas.map(l => ({
+          fecha: fechaPago,
+          fecha_acreditacion: l.tipo === 'cheque' ? (l.facred || fechaPago) : fechaPago,
+          nro_cheque: l.tipo === 'cheque' ? (l.cheque || null) : null,
+          monto_usd: l.monto,
+          tipo_pago: l.tipo,
           nro_factura: factura.nro_factura,
           concepto: `Pago factura ${factura.nro_factura || ''}`,
           factura_compra_id: fId
-        })
+        })))
         if (error) { alert('Error: ' + error.message); return }
         modal.remove()
         renderCompras()
