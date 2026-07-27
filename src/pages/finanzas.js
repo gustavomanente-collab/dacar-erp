@@ -669,12 +669,29 @@ const cotId = document.getElementById('prov-cot').value
       pagadoPorFactura[p.factura_compra_id] = (pagadoPorFactura[p.factura_compra_id] || 0) + (p.monto_usd || 0)
     })
 
+    const facturasParaVincular = (facturas || []).filter(f => (f.tipo || 'factura') === 'factura')
+
     el.innerHTML = `
       <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
-        <h3 class="font-semibold text-gray-700 mb-4">Cargar factura de compra</h3>
+        <h3 class="font-semibold text-gray-700 mb-4">Cargar documento de compra</h3>
         <div class="grid grid-cols-3 gap-3">
           <div>
-            <label class="block text-xs text-gray-500 mb-1">N° Factura</label>
+            <label class="block text-xs text-gray-500 mb-1">Tipo</label>
+            <select id="fc-tipo" class="w-full rounded-lg border-gray-300 text-sm" onchange="onTipoDocCompra()">
+              <option value="factura">Factura</option>
+              <option value="nota_credito">Nota de crédito</option>
+              <option value="nota_debito">Nota de débito</option>
+            </select>
+          </div>
+          <div id="fc-relac-blq" class="hidden col-span-2">
+            <label class="block text-xs text-gray-500 mb-1">Factura relacionada</label>
+            <select id="fc-relac" class="w-full rounded-lg border-gray-300 text-sm">
+              <option value="">-- Elegí la factura --</option>
+              ${facturasParaVincular.map(f => `<option value="${f.id}">${f.nro_factura || 'Sin número'} — ${new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR')} — U$S ${(f.monto_usd||0).toFixed(2)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label id="fc-nro-label" class="block text-xs text-gray-500 mb-1">N° Factura</label>
             <input id="fc-nro" type="text" placeholder="0001-00001234" class="w-full rounded-lg border-gray-300 text-sm" />
           </div>
           <div>
@@ -685,11 +702,11 @@ const cotId = document.getElementById('prov-cot').value
             <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
             <input id="fc-monto" type="text" inputmode="decimal" placeholder="0.00" class="w-full rounded-lg border-gray-300 text-sm" />
           </div>
-          <div>
+          <div id="fc-tc-blq">
             <label class="block text-xs text-gray-500 mb-1">T/C de la factura</label>
             <input id="fc-tc" type="text" inputmode="decimal" placeholder="Ej: 1495" class="w-full rounded-lg border-gray-300 text-sm" />
           </div>
-          <div>
+          <div id="fc-comessa-blq">
             <label class="block text-xs text-gray-500 mb-1">COMESSA</label>
             <input id="fc-comessa" type="text" placeholder="N° interno de seguimiento" class="w-full rounded-lg border-gray-300 text-sm" />
           </div>
@@ -700,7 +717,7 @@ const cotId = document.getElementById('prov-cot').value
         </div>
         <button id="btn-guardar-fc"
           class="mt-4 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-5 py-2 rounded-lg">
-          💾 Cargar factura
+          💾 Cargar
         </button>
         <p id="msg-fc" class="hidden text-sm mt-2 text-green-700"></p>
       </div>
@@ -708,22 +725,35 @@ const cotId = document.getElementById('prov-cot').value
       <div id="lista-compras" class="space-y-2"></div>
     `
 
+    window.onTipoDocCompra = () => {
+      const tipo = document.getElementById('fc-tipo').value
+      const esNota = tipo !== 'factura'
+      document.getElementById('fc-relac-blq').classList.toggle('hidden', !esNota)
+      document.getElementById('fc-tc-blq').classList.toggle('hidden', esNota)
+      document.getElementById('fc-comessa-blq').classList.toggle('hidden', esNota)
+      document.getElementById('fc-nro-label').textContent = esNota ? 'N° Nota' : 'N° Factura'
+    }
+
     document.getElementById('btn-guardar-fc').addEventListener('click', async () => {
+      const tipo = document.getElementById('fc-tipo').value
       const monto = parseMontoAR(document.getElementById('fc-monto').value)
       if (!monto) { alert('Ingresá el monto'); return }
+      const facturaRelacionadaId = document.getElementById('fc-relac').value
+      if (tipo !== 'factura' && !facturaRelacionadaId) { alert('Elegí a qué factura corresponde la nota'); return }
       const tc = parseMontoAR(document.getElementById('fc-tc').value)
       const { error } = await supabase.from('facturas_compra').insert({
+        tipo,
         nro_factura: document.getElementById('fc-nro').value || null,
         fecha: document.getElementById('fc-fecha').value,
         monto_usd: monto,
-        tc: tc || null,
-        comessa: document.getElementById('fc-comessa').value || null,
+        tc: tipo === 'factura' ? (tc || null) : null,
+        comessa: tipo === 'factura' ? (document.getElementById('fc-comessa').value || null) : null,
         concepto: document.getElementById('fc-concepto').value || null,
-        tipo: 'factura'
+        factura_relacionada_id: tipo !== 'factura' ? facturaRelacionadaId : null
       })
       if (error) { alert('Error: ' + error.message); return }
       const msgEl = document.getElementById('msg-fc')
-      msgEl.textContent = '✅ Factura registrada'
+      msgEl.textContent = tipo === 'factura' ? '✅ Factura registrada' : '✅ Nota registrada'
       msgEl.classList.remove('hidden')
       document.getElementById('fc-nro').value = ''
       document.getElementById('fc-monto').value = ''
