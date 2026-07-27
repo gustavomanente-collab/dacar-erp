@@ -1,5 +1,17 @@
 import { supabase } from '../supabase.js'
 import { generarReciboCobro, generarReciboComision } from '../recibos.js'
+
+// Los input type="number" exigen punto decimal: si se escribe coma (formato
+// AR, ej. "2675,58") el valor queda invalido. Los montos del modulo de
+// Compras se cargan como texto y se parsean con esto (tolera coma o punto).
+function parseMontoAR(v) {
+  let s = String(v ?? '').trim()
+  if (!s) return 0
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.')
+  const n = parseFloat(s)
+  return isNaN(n) ? 0 : n
+}
+
 export async function renderFinanzas(contenedor, perfil) {
   // Roles definidos por Gustavo
   const esGerencia = perfil?.role === 'gerencia'
@@ -18,6 +30,10 @@ contenedor.innerHTML = `
           💰 Cobros registrados
         </button>
         ${!esVendedor ? `
+        <button onclick="tabFin('compras')" id="tab-compras"
+          class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          🧾 Compras
+        </button>
         <button onclick="tabFin('proveedor')" id="tab-proveedor"
           class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
           🏭 Pagos proveedor
@@ -45,7 +61,7 @@ contenedor.innerHTML = `
     </div>
   `
   window.tabFin = (tab) => {
-    ;['pendientes','cobros','proveedor','comisiones','calce','rentabilidad'].forEach(t => {
+    ;['pendientes','cobros','compras','proveedor','comisiones','calce','rentabilidad'].forEach(t => {
       const btn = document.getElementById(`tab-${t}`)
       // ESCUDO: Solo cambia el color si el botón existe en la pantalla para este rol
       if (btn) {
@@ -56,6 +72,7 @@ contenedor.innerHTML = `
     })
     if (tab === 'pendientes')    renderPendientes()
     if (tab === 'cobros')        renderCobros()
+    if (tab === 'compras')       renderCompras()
     if (tab === 'proveedor')     renderProveedor()
     if (tab === 'comisiones')    renderComisiones()
     if (tab === 'calce')         renderCalce()
@@ -632,6 +649,243 @@ const cotId = document.getElementById('prov-cot').value
       cargarProv()
     }
   }
+
+  async function renderCompras() {
+    const el = document.getElementById('fin-content')
+    el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
+
+    const { data: facturas } = await supabase
+      .from('facturas_compra')
+      .select('*')
+      .order('fecha', { ascending: false })
+
+    const { data: pagosFc } = await supabase
+      .from('pagos_proveedor')
+      .select('id, monto_usd, factura_compra_id')
+      .not('factura_compra_id', 'is', null)
+
+    const pagadoPorFactura = {}
+    ;(pagosFc || []).forEach(p => {
+      pagadoPorFactura[p.factura_compra_id] = (pagadoPorFactura[p.factura_compra_id] || 0) + (p.monto_usd || 0)
+    })
+
+    el.innerHTML = `
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
+        <h3 class="font-semibold text-gray-700 mb-4">Cargar factura de compra</h3>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">N° Factura</label>
+            <input id="fc-nro" type="text" placeholder="0001-00001234" class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Fecha</label>
+            <input id="fc-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
+            <input id="fc-monto" type="text" inputmode="decimal" placeholder="0.00" class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Concepto</label>
+            <input id="fc-concepto" type="text" placeholder="Ej: Compra paneles COVER LT" class="w-full rounded-lg border-gray-300 text-sm" />
+          </div>
+        </div>
+        <button id="btn-guardar-fc"
+          class="mt-4 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          💾 Cargar factura
+        </button>
+        <p id="msg-fc" class="hidden text-sm mt-2 text-green-700"></p>
+      </div>
+
+      <div id="lista-compras" class="space-y-2"></div>
+    `
+
+    document.getElementById('btn-guardar-fc').addEventListener('click', async () => {
+      const monto = parseMontoAR(document.getElementById('fc-monto').value)
+      if (!monto) { alert('Ingresá el monto'); return }
+      const { error } = await supabase.from('facturas_compra').insert({
+        nro_factura: document.getElementById('fc-nro').value || null,
+        fecha: document.getElementById('fc-fecha').value,
+        monto_usd: monto,
+        concepto: document.getElementById('fc-concepto').value || null,
+      })
+      if (error) { alert('Error: ' + error.message); return }
+      const msgEl = document.getElementById('msg-fc')
+      msgEl.textContent = '✅ Factura registrada'
+      msgEl.classList.remove('hidden')
+      document.getElementById('fc-nro').value = ''
+      document.getElementById('fc-monto').value = ''
+      document.getElementById('fc-concepto').value = ''
+      renderCompras()
+    })
+
+    const listaEl = document.getElementById('lista-compras')
+    if (!facturas?.length) {
+      listaEl.innerHTML = '<p class="text-gray-400 text-sm p-4 text-center">No hay facturas cargadas.</p>'
+      return
+    }
+
+    listaEl.innerHTML = facturas.map(f => {
+      const pagado = pagadoPorFactura[f.id] || 0
+      const saldo  = (f.monto_usd || 0) - pagado
+      const estado = saldo <= 0.01 ? '✅ Pagada' : pagado > 0 ? '⏳ Parcial' : '🔴 Pendiente'
+      const color  = saldo <= 0.01 ? 'bg-green-500' : pagado > 0 ? 'bg-yellow-400' : 'bg-gray-300'
+      const pct    = f.monto_usd > 0 ? Math.min(100, pagado / f.monto_usd * 100) : 0
+      return `
+        <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:border-gray-400 transition-colors"
+          onclick="abrirFichaFactura('${f.id}')">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-bold text-gray-900 text-sm">${f.nro_factura || 'Sin número'}</p>
+              <p class="text-xs text-gray-500">${f.concepto || ''}</p>
+              <p class="text-xs text-gray-400">${new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs text-gray-400">${estado}</p>
+              <p class="font-bold text-gray-900 text-sm">U$S ${(f.monto_usd||0).toFixed(2)}</p>
+              <p class="text-xs ${saldo > 0.01 ? 'text-red-500' : 'text-green-600'}">
+                ${saldo > 0.01 ? `Saldo: U$S ${saldo.toFixed(2)}` : 'Cancelada'}
+              </p>
+            </div>
+          </div>
+          <div class="mt-2 bg-gray-100 rounded-full h-1.5">
+            <div class="${color} h-1.5 rounded-full" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `
+    }).join('')
+
+    window.abrirFichaFactura = async (facturaId) => {
+      const factura = facturas.find(f => f.id === facturaId)
+      if (!factura) return
+
+      const { data: pagosFactura } = await supabase
+        .from('pagos_proveedor').select('*').eq('factura_compra_id', facturaId).order('fecha')
+
+      const pagadoTotal = (pagosFactura || []).reduce((s, p) => s + (p.monto_usd || 0), 0)
+      const saldo = (factura.monto_usd || 0) - pagadoTotal
+
+      const modal = document.createElement('div')
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
+      modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <p class="text-xs text-gray-400">Factura de compra</p>
+              <h3 class="text-xl font-black text-gray-900">${factura.nro_factura || 'Sin número'}</h3>
+              <p class="text-sm text-gray-600">${factura.concepto || ''}</p>
+              <p class="text-xs text-gray-400">${new Date(factura.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</p>
+            </div>
+            <button onclick="this.closest('[style]').remove()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-gray-500">Total factura</p>
+              <p class="font-black text-gray-800">U$S ${(factura.monto_usd||0).toFixed(2)}</p>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-blue-600">Pagado</p>
+              <p class="font-black text-blue-700">U$S ${pagadoTotal.toFixed(2)}</p>
+            </div>
+            <div class="bg-${saldo > 0.01 ? 'red' : 'gray'}-50 border border-${saldo > 0.01 ? 'red' : 'gray'}-200 rounded-lg p-3 text-center">
+              <p class="text-xs text-${saldo > 0.01 ? 'red' : 'gray'}-600">Saldo</p>
+              <p class="font-black text-${saldo > 0.01 ? 'red' : 'gray'}-700">U$S ${saldo.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <h4 class="font-semibold text-gray-700 text-sm mb-2">Pagos aplicados</h4>
+            ${pagosFactura?.length ? `
+              <table class="w-full text-xs">
+                <thead><tr class="bg-gray-100">
+                  <th class="px-2 py-1 text-left">Fecha</th>
+                  <th class="px-2 py-1 text-left">Forma</th>
+                  <th class="px-2 py-1 text-right">U$S</th>
+                  <th class="px-2 py-1"></th>
+                </tr></thead>
+                <tbody>
+                  ${pagosFactura.map((p, i) => `
+                    <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                      <td class="px-2 py-1">${new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR')}</td>
+                      <td class="px-2 py-1">${p.tipo_pago}</td>
+                      <td class="px-2 py-1 text-right font-bold text-green-700">U$S ${(p.monto_usd||0).toFixed(2)}</td>
+                      <td class="px-2 py-1 text-center">
+                        <button onclick="borrarPagoFactura('${p.id}', '${facturaId}')" class="text-red-400 hover:text-red-600 font-bold">✕</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<p class="text-gray-400 text-xs">Sin pagos aún.</p>'}
+          </div>
+
+          ${saldo > 0.01 ? `
+          <div class="border-t pt-4">
+            <h4 class="font-semibold text-gray-700 text-sm mb-2">Registrar pago</h4>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Fecha</label>
+                <input id="fcp-fecha" type="date" value="${new Date().toISOString().split('T')[0]}" class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Monto U$S</label>
+                <input id="fcp-monto" type="text" inputmode="decimal" placeholder="${saldo.toFixed(2)}" class="w-full rounded border-gray-300 text-xs" />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">Forma de pago</label>
+                <select id="fcp-forma" class="w-full rounded border-gray-300 text-xs">
+                  <option value="transferencia">Transferencia</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-500 mb-1">N° Cheque (opcional)</label>
+                <input id="fcp-cheque" type="text" placeholder="Ej: 12345678" class="w-full rounded border-gray-300 text-xs" />
+              </div>
+            </div>
+            <button onclick="registrarPagoFactura('${facturaId}')"
+              class="w-full bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium py-2 rounded-lg">
+              💾 Registrar pago
+            </button>
+          </div>
+          ` : '<div class="bg-green-50 rounded-lg p-3 text-center text-sm font-semibold text-green-700">✅ Factura completamente pagada</div>'}
+        </div>
+      `
+      document.body.appendChild(modal)
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
+
+      window.registrarPagoFactura = async (fId) => {
+        const monto = parseMontoAR(document.getElementById('fcp-monto').value)
+        if (!monto) { alert('Ingresá el monto'); return }
+        const { error } = await supabase.from('pagos_proveedor').insert({
+          fecha: document.getElementById('fcp-fecha').value,
+          fecha_acreditacion: document.getElementById('fcp-fecha').value,
+          nro_cheque: document.getElementById('fcp-cheque')?.value || null,
+          monto_usd: monto,
+          tipo_pago: document.getElementById('fcp-forma').value,
+          nro_factura: factura.nro_factura,
+          concepto: `Pago factura ${factura.nro_factura || ''}`,
+          factura_compra_id: fId
+        })
+        if (error) { alert('Error: ' + error.message); return }
+        modal.remove()
+        renderCompras()
+      }
+
+      window.borrarPagoFactura = async (id, fId) => {
+        const clave = prompt('Clave de gerencia:')
+        if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
+        if (!confirm('¿Confirmás?')) return
+        await supabase.from('pagos_proveedor').delete().eq('id', id)
+        modal.remove()
+        abrirFichaFactura(fId)
+      }
+    }
+  }
+
 async function renderCalce() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
