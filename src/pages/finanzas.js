@@ -1304,21 +1304,30 @@ async function renderCalce() {
       .in('cotizacion_id', cots.map(c => c.id))
 
     const porCot = cots.map(c => {
-      const venta    = c.total_bruto_usd || c.total_final || 0
-      const costo    = c.total_neto || 0
-      const utilidad = venta - costo
-      const margen   = venta > 0 ? utilidad / venta * 100 : 0
-      return { ...c, venta, costo, utilidad, margen }
+      const venta        = c.total_bruto_usd || c.total_final || 0
+      const costo        = c.total_neto || 0
+      const utilidad     = venta - costo
+      const margen       = venta > 0 ? utilidad / venta * 100 : 0
+      // Sin override (viene de un proyecto) se usa el 25% que se cobra en paneles.
+      const pctComision  = c.pct_comision_override || 25
+      const comisionUsd  = utilidad * pctComision / 100
+      const utilidadNeta = utilidad - comisionUsd
+      const margenNeto   = venta > 0 ? utilidadNeta / venta * 100 : 0
+      return { ...c, venta, costo, utilidad, margen, pctComision, comisionUsd, utilidadNeta, margenNeto }
     })
 
     const hoy = new Date()
     const mesActual = hoy.getMonth(), anioActual = hoy.getFullYear()
     const esMesActual = f => { const d = new Date(f); return d.getMonth() === mesActual && d.getFullYear() === anioActual }
 
-    const ventaTotal    = porCot.reduce((s, c) => s + c.venta, 0)
-    const utilidadTotal = porCot.reduce((s, c) => s + c.utilidad, 0)
-    const margenProm    = ventaTotal > 0 ? utilidadTotal / ventaTotal * 100 : 0
-    const utilidadMes   = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidad, 0)
+    const ventaTotal       = porCot.reduce((s, c) => s + c.venta, 0)
+    const utilidadTotal    = porCot.reduce((s, c) => s + c.utilidad, 0)
+    const comisionTotal    = porCot.reduce((s, c) => s + c.comisionUsd, 0)
+    const utilidadNetaTotal = utilidadTotal - comisionTotal
+    const margenProm       = ventaTotal > 0 ? utilidadTotal / ventaTotal * 100 : 0
+    const margenNetoProm   = ventaTotal > 0 ? utilidadNetaTotal / ventaTotal * 100 : 0
+    const utilidadMes      = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidad, 0)
+    const utilidadNetaMes  = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidadNeta, 0)
 
     // Utilidad por mes (últimos 6 meses)
     const porMes = []
@@ -1367,18 +1376,33 @@ async function renderCalce() {
     const rankingModelos = Object.values(porModelo).sort((a, b) => b.utilidad - a.utilidad)
 
     el.innerHTML = `
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
         <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-          <p class="text-xs text-green-600 font-medium mb-1">Utilidad histórica</p>
+          <p class="text-xs text-green-600 font-medium mb-1">Utilidad bruta histórica</p>
           <p class="text-xl font-black text-green-700">U$S ${utilidadTotal.toFixed(0)}</p>
         </div>
         <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
-          <p class="text-xs text-blue-600 font-medium mb-1">Utilidad del mes</p>
+          <p class="text-xs text-blue-600 font-medium mb-1">Utilidad bruta del mes</p>
           <p class="text-xl font-black text-blue-700">U$S ${utilidadMes.toFixed(0)}</p>
         </div>
         <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
-          <p class="text-xs text-purple-600 font-medium mb-1">Margen promedio</p>
+          <p class="text-xs text-purple-600 font-medium mb-1">Margen bruto promedio</p>
           <p class="text-xl font-black text-purple-700">${margenProm.toFixed(1)}%</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+        <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-orange-600 font-medium mb-1">Comisiones (histórico)</p>
+          <p class="text-xl font-black text-orange-700">U$S ${comisionTotal.toFixed(0)}</p>
+        </div>
+        <div class="bg-teal-50 border border-teal-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-teal-600 font-medium mb-1">Utilidad neta (post comisión)</p>
+          <p class="text-xl font-black text-teal-700">U$S ${utilidadNetaTotal.toFixed(0)}</p>
+          <p class="text-xs text-teal-500">Mes: U$S ${utilidadNetaMes.toFixed(0)}</p>
+        </div>
+        <div class="bg-teal-50 border border-teal-200 rounded-xl p-4 text-center">
+          <p class="text-xs text-teal-600 font-medium mb-1">Margen neto promedio</p>
+          <p class="text-xl font-black text-teal-700">${margenNetoProm.toFixed(1)}%</p>
         </div>
       </div>
 
@@ -1448,6 +1472,53 @@ async function renderCalce() {
               `).join('')}
               ${!rankingModelos.length ? '<tr><td colspan="4" class="text-center text-gray-400 py-4">Sin datos de paneles.</td></tr>' : ''}
             </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
+        <div class="bg-gray-50 px-4 py-3 border-b">
+          <h4 class="font-semibold text-gray-700 text-sm">Detalle de utilidad por venta, comisión discriminada</h4>
+          <p class="text-xs text-gray-400 mt-0.5">Ordenado de peor a mejor utilidad neta. Usa el % de comisión propio de la venta si viene de un proyecto, 25% por defecto en paneles.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">N° Ppto</th>
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-right">Venta</th>
+              <th class="px-3 py-2 text-right">Costo</th>
+              <th class="px-3 py-2 text-right">Utilidad bruta</th>
+              <th class="px-3 py-2 text-center">% Com.</th>
+              <th class="px-3 py-2 text-right">Comisión</th>
+              <th class="px-3 py-2 text-right">Utilidad neta</th>
+              <th class="px-3 py-2 text-right">Margen neto</th>
+            </tr></thead>
+            <tbody>
+              ${[...porCot].sort((a, b) => a.utilidadNeta - b.utilidadNeta).map((c, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
+                  <td class="px-3 py-2">${c.clientes?.nombre || ''}</td>
+                  <td class="px-3 py-2 text-right">U$S ${c.venta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-gray-500">U$S ${c.costo.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-gray-700">U$S ${c.utilidad.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-gray-500">${c.pctComision.toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right text-orange-600">-U$S ${c.comisionUsd.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right font-bold ${c.utilidadNeta >= 0 ? 'text-green-700' : 'text-red-600'}">U$S ${c.utilidadNeta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right ${c.margenNeto < 10 ? 'text-red-500 font-semibold' : 'text-gray-500'}">${c.margenNeto.toFixed(1)}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="bg-gray-900 text-white font-bold">
+                <td colspan="4" class="px-3 py-2 text-xs">TOTALES</td>
+                <td class="px-3 py-2 text-right text-xs text-gray-300">U$S ${utilidadTotal.toFixed(2)}</td>
+                <td></td>
+                <td class="px-3 py-2 text-right text-xs text-orange-300">-U$S ${comisionTotal.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs ${utilidadNetaTotal >= 0 ? 'text-green-300' : 'text-red-300'}">U$S ${utilidadNetaTotal.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs text-gray-300">${margenNetoProm.toFixed(1)}%</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
