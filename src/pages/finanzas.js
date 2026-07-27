@@ -1144,7 +1144,11 @@ async function renderCalce() {
     })
 
     const totalCobrado = calce.reduce((s, c) => s + c.cobradoVenta, 0)
-    const totalPagado  = calce.reduce((s, c) => s + c.pagadoVenta, 0)
+    // Suma de la columna "Pagado prov." (solo pagos vinculados a una cotizacion puntual)
+    const totalPagadoPorVenta = calce.reduce((s, c) => s + c.pagadoVenta, 0)
+    // Total real de pagos a proveedor: los pagos hechos desde Compras estan vinculados
+    // a una factura, no a una venta, asi que no entran en totalPagadoPorVenta.
+    const totalPagado  = (pagos || []).reduce((s, p) => s + (p.monto_usd || 0), 0)
     const posicionCaja = totalCobrado - totalPagado
 
     el.innerHTML = `
@@ -1167,6 +1171,7 @@ async function renderCalce() {
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
         <div class="bg-gray-50 px-4 py-3 border-b">
           <h4 class="font-semibold text-gray-700 text-sm">Calce por venta</h4>
+          <p class="text-xs text-gray-400 mt-0.5">"Pagado prov." solo cuenta pagos vinculados a esta venta puntual — los pagos de facturas en Compras no se vinculan a una venta, por eso el total de arriba puede ser mayor que la suma de esta columna.</p>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
@@ -1208,7 +1213,7 @@ async function renderCalce() {
                 <td class="px-3 py-2 text-right text-xs text-green-300">U$S ${totalCobrado.toFixed(2)}</td>
                 <td></td>
                 <td></td>
-                <td class="px-3 py-2 text-right text-xs text-red-300">U$S ${totalPagado.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs text-red-300">U$S ${totalPagadoPorVenta.toFixed(2)}</td>
                 <td></td>
                 <td class="px-3 py-2 text-right text-xs ${posicionCaja >= 0 ? 'text-blue-300' : 'text-orange-300'}">
                   U$S ${posicionCaja.toFixed(2)}
