@@ -26,7 +26,7 @@ export async function renderDashboard(contenedor) {
     supabase.from('cotizaciones').select('*, clientes(nombre)').order('created_at'),
     supabase.from('cobros').select('*').order('fecha'),
     supabase.from('pagos_proveedor').select('*').order('fecha'),
-    supabase.from('cobros').select('*, cotizaciones(total_final, total_neto)').order('fecha')
+    supabase.from('cobros').select('*, cotizaciones(total_final, total_neto, total_bruto_usd, pct_comision_override)').order('fecha')
   ])
 
   const hoy = new Date()
@@ -64,15 +64,17 @@ export async function renderDashboard(contenedor) {
 
   const cobrosPendientes = totalVentasAprobadas - totalCobrado
 
-  // Comisiones pendientes
+  // Comisiones pendientes (misma base y % que en Finanzas > Comisiones)
   const comisionesPend = (comisiones || [])
     .filter(c => !c.liquidado && c.cotizaciones)
     .reduce((s, c) => {
-      const totalFinal = c.cotizaciones?.total_final || 0
-      const totalNeto  = c.cotizaciones?.total_neto || 0
-      const util = totalFinal - totalNeto
-      const pct  = totalFinal > 0 ? util / totalFinal : 0
-      return s + c.monto_usd * pct * 0.25
+      const totalBase = c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0
+      const totalNeto = c.cotizaciones?.total_neto || 0
+      const pctComision = c.cotizaciones?.pct_comision_override || 25
+      const util = totalBase - totalNeto
+      const pct  = totalBase > 0 ? util / totalBase : 0
+      const montoBase = Math.min(c.monto_usd || 0, totalBase)
+      return s + montoBase * pct * (pctComision / 100)
     }, 0)
 
   // Liquidez: cuánto cobré vs cuánto pagué este mes

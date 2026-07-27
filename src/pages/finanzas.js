@@ -136,10 +136,10 @@ contenedor.innerHTML = `
             <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between">
               <div>
                 <p class="text-xs font-semibold text-purple-700">Comisión total de esta venta</p>
-                <p class="text-sm font-black text-purple-800">U$S ${((cot.total_final - cot.total_neto) * 0.25).toFixed(2)}</p>
-                <p class="text-xs text-purple-500">25% sobre utilidad neta de U$S ${(cot.total_final - cot.total_neto).toFixed(2)}</p>
+                <p class="text-sm font-black text-purple-800">U$S ${((cot.total_final - cot.total_neto) * (cot.pct_comision_override || 25) / 100).toFixed(2)}</p>
+                <p class="text-xs text-purple-500">${cot.pct_comision_override || 25}% sobre utilidad neta de U$S ${(cot.total_final - cot.total_neto).toFixed(2)}</p>
               </div>
-              <button onclick="liquidarVentaCompleta('${cot.id}', ${cot.total_final}, ${cot.total_neto})"
+              <button onclick="liquidarVentaCompleta('${cot.id}', ${cot.total_final}, ${cot.total_neto}, ${cot.pct_comision_override || 25})"
                 class="bg-purple-700 hover:bg-purple-900 text-white text-xs font-medium px-3 py-2 rounded-lg">
                 💸 Liquidar 100%
               </button>
@@ -359,9 +359,9 @@ const { error } = await supabase.from('cobros').insert({
         modal.remove()
         renderPendientes()
       }
-window.liquidarVentaCompleta = async (cotId, totalFinal, totalNeto) => {
+window.liquidarVentaCompleta = async (cotId, totalFinal, totalNeto, pctComision) => {
         const utilidad = totalFinal - totalNeto
-        const comision = utilidad * 0.25
+        const comision = utilidad * (pctComision || 25) / 100
         const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
 
         if (!confirm(`¿Liquidar comisión completa de U$S ${comision.toFixed(2)} ($ ${Math.round(comision * tc).toLocaleString('es-AR')}) sobre utilidad de U$S ${utilidad.toFixed(2)}?`)) return
@@ -1531,21 +1531,22 @@ async function renderCalce() {
 
     const { data } = await supabase
       .from('cobros')
-      .select(`*, clientes(nombre), cotizaciones(numero, total_final, total_neto)`)
+      .select(`*, clientes(nombre), cotizaciones(numero, total_final, total_neto, total_bruto_usd, pct_comision_override)`)
       .order('fecha', { ascending: false })
 
     const cobrosConCot = (data || []).filter(c => c.cotizaciones)
 
     const comisionesCalc = cobrosConCot.map(c => {
-      const totalFinal = c.cotizaciones.total_final || 0
       const totalNeto  = c.cotizaciones.total_neto || 0
-      const totalBase  = c.cotizaciones?.total_final || 0
+      // Misma base que el resto de la app: total_bruto_usd (con IVA si esta facturada), si no total_final
+      const totalBase  = c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0
+      const pctComision = c.cotizaciones?.pct_comision_override || 25
       const utilidad   = totalBase - totalNeto
       const pctUtil    = totalBase > 0 ? utilidad / totalBase : 0
       const montoBase  = Math.min(c.monto_usd, totalBase)
       const utilidadDelCobro = montoBase * pctUtil
-      const comision   = utilidadDelCobro * 0.25
-      return { ...c, utilidadDelCobro, comision }
+      const comision   = utilidadDelCobro * pctComision / 100
+      return { ...c, pctComision, utilidadDelCobro, comision }
     })
 
     const pendientes  = comisionesCalc.filter(c => !c.liquidado)
@@ -1553,6 +1554,7 @@ async function renderCalce() {
     const totalPend   = pendientes.reduce((s, c) => s + c.comision, 0)
     const totalLiquid = liquidadas.reduce((s, c) => s + c.comision, 0)
     el.innerHTML = `
+      <p class="text-xs text-gray-400 mb-3">Esta pestaña calcula la comisión sobre lo ya <strong>cobrado</strong> de cada venta. "Rentabilidad" la calcula sobre el <strong>total vendido</strong>, aunque todavía no se haya cobrado — por eso, en ventas con saldo pendiente, los números no van a coincidir hasta que la venta esté 100% cobrada.</p>
       <!-- Resumen -->
       <div class="grid grid-cols-2 gap-3 mb-4">
         <div class="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
@@ -1590,7 +1592,8 @@ async function renderCalce() {
               <th class="px-3 py-2 text-left">Ppto</th>
               <th class="px-3 py-2 text-right">Cobrado U$S</th>
               <th class="px-3 py-2 text-right">Utilidad</th>
-              <th class="px-3 py-2 text-right">Comisión 25%</th>
+              <th class="px-3 py-2 text-center">% Com.</th>
+              <th class="px-3 py-2 text-right">Comisión U$S</th>
               <th class="px-3 py-2 text-right">Comisión $</th>
               <th class="px-3 py-2 text-center">Acción</th>
             </tr></thead>
@@ -1607,10 +1610,11 @@ async function renderCalce() {
                   <td class="px-3 py-2">${c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-'}</td>
                   <td class="px-3 py-2 text-right font-bold text-green-700">U$S ${(c.monto_usd||0).toFixed(2)}</td>
                   <td class="px-3 py-2 text-right text-gray-600">U$S ${c.utilidadDelCobro.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-gray-500">${c.pctComision}%</td>
                   <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
 <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
                   <td class="px-3 py-2 text-center">
-                    <button onclick="liquidarVentaDesdeComisiones('${c.cotizacion_id}', ${c.cotizaciones?.total_final || 0}, ${c.cotizaciones?.total_neto || 0}, '${c.cotizaciones?.numero || 0}')"
+                    <button onclick="liquidarVentaDesdeComisiones('${c.cotizacion_id}', ${c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0}, ${c.cotizaciones?.total_neto || 0}, '${c.cotizaciones?.numero || 0}', ${c.pctComision})"
                       class="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded font-medium">
                       💸 100%
                     </button>
@@ -1682,7 +1686,7 @@ window.liquidarSeleccionados = async () => {
       renderComisiones()
     }
 
-    window.liquidarVentaDesdeComisiones = async (cotId, totalFinal, totalNeto, numero) => {
+    window.liquidarVentaDesdeComisiones = async (cotId, totalFinal, totalNeto, numero, pctComision) => {
       // Verificar si ya hay liquidación para esta cotización
       const { data: cobrosYaLiquid } = await supabase
         .from('cobros')
@@ -1695,7 +1699,7 @@ window.liquidarSeleccionados = async () => {
       }
 
       const utilidad = totalFinal - totalNeto
-      const comision = utilidad * 0.25
+      const comision = utilidad * (pctComision || 25) / 100
       const tc = parseFloat(prompt('Tipo de cambio $ / U$S:', '1150')) || 1150
 
       if (!confirm(`¿Liquidar comisión completa de la venta 2026-${String(numero).padStart(3,'0')}?\nMonto: U$S ${comision.toFixed(2)} ($ ${Math.round(comision * tc).toLocaleString('es-AR')})`)) return
