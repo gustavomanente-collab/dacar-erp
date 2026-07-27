@@ -399,6 +399,10 @@ contenedor.innerHTML = `
        class="flex-1 bg-gray-300 text-gray-500 font-bold py-3 rounded-xl cursor-not-allowed">
        📄 Descargar PDF
      </button>
+     <button id="btn-alternativa"
+       class="flex-1 bg-indigo-600 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl">
+       🔀 Crear alternativa
+     </button>
    </div>
    <p id="msg-cot" class="hidden text-center text-sm pb-6 text-green-700"></p>
  </div>
@@ -1144,6 +1148,31 @@ if (datosEditar) {
   renderItems()
   recalcular()
 }
+
+// ── CREAR ALTERNATIVA ───────────────────────────────────────────────
+// Duplica lo que hay cargado (cliente, items, márgenes) en un ppto nuevo
+// para poder cambiar espesor/items sin tocar el que ya está guardado.
+document.getElementById('btn-alternativa').addEventListener('click', () => {
+  if (!clienteId) { alert('Seleccioná un cliente'); return }
+  if (!items.length) { alert('Agregá al menos un ítem'); return }
+
+  sessionStorage.setItem('editar_cotizacion', JSON.stringify({
+    cliente: { id: clienteId, nombre: clienteData?.nombre, obra: clienteData?.obra, direccion: clienteData?.dir },
+    items: items.map(it => ({
+      descripcion: it.descripcion + (it.opcional ? ' [OPCIONAL]' : ''),
+      cantidad: it.tipo === 'panel' ? it.m2 : it.cant,
+      notas: JSON.stringify({
+        tipo: it.tipo, modelo: it.modelo || null, espesor: it.espesor || null,
+        term: it.term || null, color: it.color || null, m2: it.m2 || null,
+        chapas: it.chapas || null, largo: it.largo || null,
+        costo_unit: it.costo_unit, dto: it.dto || 0
+      })
+    })),
+    margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
+    descuento_pct: parseFloat(document.getElementById('dto-ger').value) || 0,
+  }))
+  window.navigate('cotizador')
+})
 
 // ── GUARDAR ───────────────────────────────────────────────────────
 document.getElementById('btn-guardar').addEventListener('click', async () => {
