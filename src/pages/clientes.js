@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js'
+import { ESTILOS, filaAlt, descargarExcel, fechaArchivo } from '../excelHelpers.js'
 
 export async function renderClientes(contenedor) {
   contenedor.innerHTML = `
@@ -8,10 +9,16 @@ export async function renderClientes(contenedor) {
       <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-4">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-bold text-gray-900">Clientes</h2>
-          <button id="btn-nuevo-cliente"
-            class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
-            + Nuevo cliente
-          </button>
+          <div class="flex gap-2">
+            <button id="btn-excel-clientes"
+              class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              📥 Excel
+            </button>
+            <button id="btn-nuevo-cliente"
+              class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+              + Nuevo cliente
+            </button>
+          </div>
         </div>
         <div class="relative">
           <input id="busca-cli" type="text" placeholder="🔍 Buscar cliente por nombre, código o teléfono..."
@@ -73,6 +80,36 @@ export async function renderClientes(contenedor) {
     .from('clientes')
     .select('*')
     .order('nombre')
+
+  document.getElementById('btn-excel-clientes').addEventListener('click', () => {
+    const filas = [
+      [{ v: 'CLIENTES', s: ESTILOS.title }],
+      [],
+      [
+        { v: 'Código', s: ESTILOS.header }, { v: 'Nombre', s: ESTILOS.header },
+        { v: 'Teléfono', s: ESTILOS.header }, { v: 'Dirección', s: ESTILOS.header },
+        { v: 'Obra', s: ESTILOS.header }, { v: 'Notas', s: ESTILOS.header },
+      ]
+    ]
+    ;(clientes || []).forEach((c, i) => {
+      const est = filaAlt(i)
+      filas.push([
+        { v: c.codigo || '', s: est },
+        { v: c.nombre || '', s: { ...est, font: { bold: true } } },
+        { v: c.telefono || '', s: est },
+        { v: c.direccion || '', s: est },
+        { v: c.obra || '', s: est },
+        { v: c.notas || '', s: est },
+      ])
+    })
+    filas.push([])
+    filas.push([{ v: `Total: ${(clientes || []).length} clientes`, s: ESTILOS.bold }])
+    descargarExcel(filas, {
+      nombreHoja: 'Clientes',
+      nombreArchivo: `DACAR_clientes_${fechaArchivo()}.xlsx`,
+      colWidths: [12, 30, 16, 30, 22, 34]
+    })
+  })
 
   // Buscador
   const buscaCli = document.getElementById('busca-cli')

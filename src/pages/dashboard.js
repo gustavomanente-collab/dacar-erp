@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js'
+import { ESTILOS, filaAlt, descargarExcelMultiple, fechaArchivo } from '../excelHelpers.js'
 
 export async function renderDashboard(contenedor) {
   contenedor.innerHTML = `
@@ -8,7 +9,12 @@ export async function renderDashboard(contenedor) {
           <h2 class="text-2xl font-black text-gray-900">Dashboard</h2>
           <p class="text-sm text-gray-400">Resumen ejecutivo DACAR SRL</p>
         </div>
-        <p class="text-xs text-gray-400">${new Date().toLocaleDateString('es-AR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
+        <div class="flex items-center gap-3">
+          <button id="btn-excel-dash" class="bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📥 Excel
+          </button>
+          <p class="text-xs text-gray-400">${new Date().toLocaleDateString('es-AR', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
+        </div>
       </div>
       <div id="dash-content">
         <p class="text-gray-400 text-sm text-center py-12">Cargando datos...</p>
@@ -307,4 +313,58 @@ export async function renderDashboard(contenedor) {
       </div>
     </div>
   `
+
+  document.getElementById('btn-excel-dash').addEventListener('click', () => {
+    const hojaResumen = [
+      [{ v: 'DASHBOARD — RESUMEN EJECUTIVO', s: ESTILOS.title }],
+      [{ v: new Date().toLocaleDateString('es-AR'), s: ESTILOS.subtitle }],
+      [],
+      [{ v: 'Ventas aprobadas del mes', s: ESTILOS.label }, { v: ventasMes, t: 'n', s: ESTILOS.moneyB }],
+      [{ v: 'Cobrado este mes', s: ESTILOS.label }, { v: cobrosMes, t: 'n', s: ESTILOS.money }],
+      [{ v: 'Pagado a proveedor este mes', s: ESTILOS.label }, { v: pagosMes, t: 'n', s: ESTILOS.money }],
+      [{ v: 'Liquidez del mes', s: ESTILOS.label }, { f: 'B5-B6', t: 'n', s: ESTILOS.moneyB }],
+      [{ v: 'Cobros pendientes totales', s: ESTILOS.label }, { v: cobrosPendientes, t: 'n', s: ESTILOS.money }],
+      [{ v: 'Comisiones a liquidar', s: ESTILOS.label }, { v: comisionesPend, t: 'n', s: ESTILOS.money }],
+      [{ v: 'Total cobrado histórico', s: ESTILOS.label }, { v: totalCobrado, t: 'n', s: ESTILOS.money }],
+    ]
+
+    const hojaMeses = [
+      [{ v: 'VENTAS VS COBROS — ÚLTIMOS 6 MESES', s: ESTILOS.title }],
+      [],
+      [{ v: 'Mes', s: ESTILOS.header }, { v: 'Ventas aprobadas', s: ESTILOS.header }, { v: 'Cobrado', s: ESTILOS.header }],
+    ]
+    ventasPorMes.forEach((v, i) => {
+      hojaMeses.push([
+        { v: v.label, s: filaAlt(i) },
+        { v: v.ventas, t: 'n', s: { ...filaAlt(i), ...ESTILOS.money } },
+        { v: v.cobrados, t: 'n', s: { ...filaAlt(i), ...ESTILOS.money } },
+      ])
+    })
+
+    const hojaPend = [
+      [{ v: 'PRESUPUESTOS ENVIADOS SIN RESPUESTA', s: ESTILOS.title }],
+      [],
+      [{ v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header }, { v: 'Total U$S', s: ESTILOS.header }],
+      ...pptosPendientes.map((c, i) => ([
+        { v: `2026-${String(c.numero).padStart(3,'0')}`, s: filaAlt(i) },
+        { v: c.clientes?.nombre || '', s: filaAlt(i) },
+        { v: c.total_final || 0, t: 'n', s: { ...filaAlt(i), ...ESTILOS.money } },
+      ])),
+      [],
+      [{ v: 'VENTAS CON SALDO PENDIENTE', s: ESTILOS.title }],
+      [],
+      [{ v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header }, { v: 'Saldo U$S', s: ESTILOS.header }],
+      ...ventasConSaldo.map((c, i) => ([
+        { v: `2026-${String(c.numero).padStart(3,'0')}`, s: filaAlt(i) },
+        { v: c.clientes?.nombre || '', s: filaAlt(i) },
+        { v: c.saldo, t: 'n', s: { ...filaAlt(i), ...ESTILOS.moneyRed } },
+      ])),
+    ]
+
+    descargarExcelMultiple([
+      { filas: hojaResumen, nombreHoja: 'Resumen', colWidths: [30, 16] },
+      { filas: hojaMeses, nombreHoja: 'Ventas vs Cobros', colWidths: [12, 18, 18] },
+      { filas: hojaPend, nombreHoja: 'Pendientes', colWidths: [12, 26, 14] },
+    ], `DACAR_dashboard_${fechaArchivo()}.xlsx`)
+  })
 }

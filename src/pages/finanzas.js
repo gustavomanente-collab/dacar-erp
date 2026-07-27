@@ -1,5 +1,6 @@
 import { supabase } from '../supabase.js'
 import { generarReciboCobro, generarReciboComision } from '../recibos.js'
+import { ESTILOS, filaAlt, descargarExcel, fechaArchivo } from '../excelHelpers.js'
 
 // Los input type="number" exigen punto decimal: si se escribe coma (formato
 // AR, ej. "2675,58") el valor queda invalido. Los montos del modulo de
@@ -103,9 +104,13 @@ contenedor.innerHTML = `
     })
 
     el.innerHTML = `
-      <div class="mb-4">
+      <div class="mb-4 flex gap-2">
         <input id="busca-venta" type="text" placeholder="🔍 Buscar por cliente, código o N° ppto..."
           class="w-full rounded-lg border-gray-300 text-sm" />
+        <button onclick="exportarPendientesExcel()"
+          class="shrink-0 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg">
+          📥 Excel
+        </button>
       </div>
       <div id="tablero-ventas" class="space-y-2">
         ${cots.map(cot => {
@@ -168,6 +173,50 @@ contenedor.innerHTML = `
         card.style.display = card.dataset.search.includes(txt) ? '' : 'none'
       })
     })
+
+    window.exportarPendientesExcel = () => {
+      const filas = [
+        [{ v: 'PENDIENTES DE COBRO', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
+          { v: 'Código', s: ESTILOS.header }, { v: 'Obra', s: ESTILOS.header },
+          { v: 'Venta U$S', s: ESTILOS.header }, { v: 'Cobrado U$S', s: ESTILOS.header },
+          { v: 'Saldo U$S', s: ESTILOS.header }, { v: 'Estado', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      cots.forEach((cot, i) => {
+        const nro = `2026-${String(cot.numero).padStart(3,'0')}`
+        const bruto = cot.total_bruto_usd || cot.total_final || 0
+        const cobrado = cobradoPorCot[cot.id] || 0
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        filas.push([
+          { v: nro, s: { ...est, font: { bold: true } } },
+          { v: cot.clientes?.nombre || '', s: est },
+          { v: cot.clientes?.codigo || '', s: est },
+          { v: cot.clientes?.obra || '', s: est },
+          { v: bruto, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: cobrado, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `E${row}-F${row}`, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: cobrado >= bruto ? 'Cobrado' : cobrado > 0 ? 'Parcial' : 'Pendiente', s: est },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {}, {}, {},
+        { f: `SUM(E${filaIni}:E${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(F${filaIni}:F${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        {}
+      ])
+      descargarExcel(filas, {
+        nombreHoja: 'Pendientes',
+        nombreArchivo: `DACAR_pendientes_cobro_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 26, 12, 20, 14, 14, 14, 12]
+      })
+    }
 
     window.abrirFichaVenta = async (cotId) => {
       const cot = cots.find(c => c.id === cotId)
@@ -414,7 +463,7 @@ window.borrarCobroFicha = async (id, cotId) => {
     const totalArs = data.reduce((s, c) => s + (c.monto_ars || 0), 0)
 
     el.innerHTML = `
-      <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="grid grid-cols-2 gap-3 mb-2">
         <div class="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
           <p class="text-xs text-green-600 font-medium">Total cobrado U$S</p>
           <p class="text-xl font-black text-green-700">U$S ${totalUsd.toFixed(2)}</p>
@@ -423,6 +472,12 @@ window.borrarCobroFicha = async (id, cotId) => {
           <p class="text-xs text-blue-600 font-medium">Total cobrado $</p>
           <p class="text-xl font-black text-blue-700">$ ${Math.round(totalArs).toLocaleString('es-AR')}</p>
         </div>
+      </div>
+      <div class="flex justify-end mb-2">
+        <button onclick="exportarCobrosExcel()"
+          class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+          📥 Excel
+        </button>
       </div>
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <table class="w-full text-xs">
@@ -457,6 +512,47 @@ window.borrarCobroFicha = async (id, cotId) => {
         </table>
       </div>
     `
+
+    window.exportarCobrosExcel = () => {
+      const filas = [
+        [{ v: 'COBROS REGISTRADOS', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'Fecha', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
+          { v: 'Ppto', s: ESTILOS.header }, { v: 'Concepto', s: ESTILOS.header },
+          { v: 'Forma', s: ESTILOS.header }, { v: 'U$S', s: ESTILOS.header },
+          { v: 'T/C', s: ESTILOS.header }, { v: '$', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      data.forEach((c, i) => {
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        const esDevolucion = (c.monto_usd || 0) < 0
+        filas.push([
+          { v: new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR'), s: est },
+          { v: c.clientes?.nombre || '', s: est },
+          { v: c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-', s: est },
+          { v: (esDevolucion ? 'Devolución - ' : '') + (c.concepto || ''), s: est },
+          { v: c.tipo_pago, s: est },
+          { v: c.monto_usd || 0, t: 'n', s: { ...est, ...(esDevolucion ? ESTILOS.moneyRed : ESTILOS.money) } },
+          { v: c.tc || 0, t: 'n', s: { ...est, ...ESTILOS.center } },
+          { f: `F${row}*G${row}`, t: 'n', s: { ...est, ...ESTILOS.moneyAR } },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {}, {}, {}, {},
+        { f: `SUM(F${filaIni}:F${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: { font: { bold: true }, numFmt: '"$ "#,##0' } },
+      ])
+      descargarExcel(filas, {
+        nombreHoja: 'Cobros',
+        nombreArchivo: `DACAR_cobros_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 26, 12, 26, 14, 14, 8, 14]
+      })
+    }
+
 window.imprimirReciboCobro = async (id) => {
       const cobro = data.find(c => c.id === id)
       if (!cobro) return
@@ -612,9 +708,15 @@ const cotId = document.getElementById('prov-cot').value
     if (!data?.length) { el.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay pagos.</p>'; return }
     const total = data.reduce((s, p) => s + (p.monto_usd || 0), 0)
     el.innerHTML = `
-      <div class="p-3 bg-gray-50 border-b flex justify-between">
+      <div class="p-3 bg-gray-50 border-b flex justify-between items-center">
         <span class="text-sm font-medium text-gray-700">Total pagado al proveedor:</span>
-        <span class="text-sm font-bold">U$S ${total.toFixed(2)}</span>
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-bold">U$S ${total.toFixed(2)}</span>
+          <button onclick="exportarProvExcel()"
+            class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg">
+            📥 Excel
+          </button>
+        </div>
       </div>
       <table class="w-full text-xs">
         <thead><tr class="bg-gray-900 text-white">
@@ -641,6 +743,41 @@ const cotId = document.getElementById('prov-cot').value
         </tbody>
       </table>
     `
+
+    window.exportarProvExcel = () => {
+      const filas = [
+        [{ v: 'PAGOS A PROVEEDOR', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'Fecha', s: ESTILOS.header }, { v: 'Concepto', s: ESTILOS.header },
+          { v: 'N° Factura', s: ESTILOS.header }, { v: 'Forma', s: ESTILOS.header },
+          { v: 'N° Cheque', s: ESTILOS.header }, { v: 'U$S', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      data.forEach((p, i) => {
+        const est = filaAlt(i)
+        filas.push([
+          { v: new Date(p.fecha + 'T12:00:00').toLocaleDateString('es-AR'), s: est },
+          { v: p.concepto || '', s: est },
+          { v: p.nro_factura || '', s: est },
+          { v: p.tipo_pago, s: est },
+          { v: p.nro_cheque || '', s: est },
+          { v: p.monto_usd || 0, t: 'n', s: { ...est, ...ESTILOS.money } },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTAL', s: ESTILOS.bold }, {}, {}, {}, {},
+        { f: `SUM(F${filaIni}:F${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+      ])
+      descargarExcel(filas, {
+        nombreHoja: 'Pagos proveedor',
+        nombreArchivo: `DACAR_pagos_proveedor_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 28, 14, 14, 14, 14]
+      })
+    }
+
     window.borrarProv = async (id) => {
       const clave = prompt('Clave de gerencia:')
       if (clave !== 'dacar2024') { alert('Clave incorrecta'); return }
@@ -722,6 +859,12 @@ const cotId = document.getElementById('prov-cot').value
         <p id="msg-fc" class="hidden text-sm mt-2 text-green-700"></p>
       </div>
 
+      <div class="flex justify-end mb-2">
+        <button onclick="exportarComprasExcel()"
+          class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+          📥 Excel
+        </button>
+      </div>
       <div id="lista-compras" class="space-y-2"></div>
     `
 
@@ -772,6 +915,80 @@ const cotId = document.getElementById('prov-cot').value
     })
 
     const soloFacturas = (facturas || []).filter(f => (f.tipo || 'factura') === 'factura')
+
+    window.exportarComprasExcel = () => {
+      const filas = [
+        [{ v: 'COMPRAS — FACTURAS DE PROVEEDOR', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'N° Factura', s: ESTILOS.header }, { v: 'Fecha', s: ESTILOS.header },
+          { v: 'COMESSA', s: ESTILOS.header }, { v: 'T/C', s: ESTILOS.header },
+          { v: 'Concepto', s: ESTILOS.header }, { v: 'Monto factura', s: ESTILOS.header },
+          { v: 'Ajuste notas', s: ESTILOS.header }, { v: 'Monto ajustado', s: ESTILOS.header },
+          { v: 'Pagado', s: ESTILOS.header }, { v: 'Saldo', s: ESTILOS.header },
+          { v: 'Estado', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      soloFacturas.forEach((f, i) => {
+        const notas = notasPorFactura[f.id] || []
+        const ajusteNotas = notas.reduce((s, n) => s + (n.tipo === 'nota_credito' ? -(n.monto_usd || 0) : (n.monto_usd || 0)), 0)
+        const pagado = pagadoPorFactura[f.id] || 0
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        filas.push([
+          { v: f.nro_factura || 'Sin número', s: { ...est, font: { bold: true } } },
+          { v: new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR'), s: est },
+          { v: f.comessa || '', s: est },
+          { v: f.tc || '', s: { ...est, ...ESTILOS.center } },
+          { v: f.concepto || '', s: est },
+          { v: f.monto_usd || 0, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: ajusteNotas, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `F${row}+G${row}`, t: 'n', s: { ...est, ...ESTILOS.moneyB } },
+          { v: pagado, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `H${row}-I${row}`, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: (pagado >= (f.monto_usd||0) + ajusteNotas) ? 'Pagada' : pagado > 0 ? 'Parcial' : 'Pendiente', s: est },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {}, {}, {}, {},
+        { f: `SUM(F${filaIni}:F${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(I${filaIni}:I${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(J${filaIni}:J${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        {}
+      ])
+
+      const notasTodas = (facturas || []).filter(f => f.tipo === 'nota_credito' || f.tipo === 'nota_debito')
+      if (notasTodas.length) {
+        filas.push([])
+        filas.push([{ v: 'NOTAS DE CRÉDITO/DÉBITO', s: ESTILOS.subtitle }])
+        filas.push([
+          { v: 'N° Nota', s: ESTILOS.header }, { v: 'Tipo', s: ESTILOS.header },
+          { v: 'Factura relacionada', s: ESTILOS.header }, { v: 'Fecha', s: ESTILOS.header },
+          { v: 'Monto', s: ESTILOS.header }, { v: 'Concepto', s: ESTILOS.header },
+        ])
+        notasTodas.forEach((n, i) => {
+          const facturaPadre = soloFacturas.find(f => f.id === n.factura_relacionada_id)
+          filas.push([
+            { v: n.nro_factura || '', s: filaAlt(i) },
+            { v: n.tipo === 'nota_credito' ? 'Crédito' : 'Débito', s: filaAlt(i) },
+            { v: facturaPadre?.nro_factura || '', s: filaAlt(i) },
+            { v: new Date(n.fecha + 'T12:00:00').toLocaleDateString('es-AR'), s: filaAlt(i) },
+            { v: n.tipo === 'nota_credito' ? -(n.monto_usd||0) : (n.monto_usd||0), t: 'n', s: { ...filaAlt(i), ...ESTILOS.money } },
+            { v: n.concepto || '', s: filaAlt(i) },
+          ])
+        })
+      }
+
+      descargarExcel(filas, {
+        nombreHoja: 'Compras',
+        nombreArchivo: `DACAR_compras_${fechaArchivo()}.xlsx`,
+        colWidths: [16, 12, 14, 8, 26, 14, 12, 14, 12, 12, 12]
+      })
+    }
 
     const listaEl = document.getElementById('lista-compras')
     if (!soloFacturas.length) {
@@ -1169,9 +1386,15 @@ async function renderCalce() {
       </div>
 
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
-        <div class="bg-gray-50 px-4 py-3 border-b">
-          <h4 class="font-semibold text-gray-700 text-sm">Calce por venta</h4>
-          <p class="text-xs text-gray-400 mt-0.5">"Pagado prov." solo cuenta pagos vinculados a esta venta puntual — los pagos de facturas en Compras no se vinculan a una venta, por eso el total de arriba puede ser mayor que la suma de esta columna.</p>
+        <div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between gap-3">
+          <div>
+            <h4 class="font-semibold text-gray-700 text-sm">Calce por venta</h4>
+            <p class="text-xs text-gray-400 mt-0.5">"Pagado prov." solo cuenta pagos vinculados a esta venta puntual — los pagos de facturas en Compras no se vinculan a una venta, por eso el total de arriba puede ser mayor que la suma de esta columna.</p>
+          </div>
+          <button onclick="exportarCalceExcel()"
+            class="shrink-0 bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+            📥 Excel
+          </button>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
@@ -1224,6 +1447,52 @@ async function renderCalce() {
         </div>
       </div>
     `
+
+    window.exportarCalceExcel = () => {
+      const filas = [
+        [{ v: 'CALCE POR VENTA', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
+          { v: 'Venta U$S', s: ESTILOS.header }, { v: 'Cobrado', s: ESTILOS.header },
+          { v: 'Por cobrar', s: ESTILOS.header }, { v: 'Costo lista', s: ESTILOS.header },
+          { v: 'Pagado prov.', s: ESTILOS.header }, { v: 'Por pagar', s: ESTILOS.header },
+          { v: 'Resultado', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      calce.forEach((c, i) => {
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        filas.push([
+          { v: `2026-${String(c.numero).padStart(3,'0')}`, s: { ...est, font: { bold: true } } },
+          { v: c.clientes?.nombre || '', s: est },
+          { v: c.totalVenta, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.cobradoVenta, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `C${row}-D${row}`, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.costoVenta, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.pagadoVenta, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `F${row}-G${row}`, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `D${row}-G${row}`, t: 'n', s: { ...est, font: { bold: true } , numFmt: '"U$S "#,##0.00' } },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {},
+        { f: `SUM(C${filaIni}:C${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(D${filaIni}:D${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(F${filaIni}:F${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(I${filaIni}:I${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+      ])
+      filas.push([])
+      filas.push([{ v: 'Total pagado proveedor (todos los pagos, no solo vinculados a venta)', s: ESTILOS.label }, { v: totalPagado, t: 'n', s: ESTILOS.moneyB }])
+      descargarExcel(filas, {
+        nombreHoja: 'Calce',
+        nombreArchivo: `DACAR_calce_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 24, 14, 14, 14, 14, 14, 14, 14]
+      })
+    }
 
 // Vencimientos próximos 30 días
     const hoy = new Date()
@@ -1477,9 +1746,15 @@ async function renderCalce() {
       </div>
 
       <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
-        <div class="bg-gray-50 px-4 py-3 border-b">
-          <h4 class="font-semibold text-gray-700 text-sm">Detalle de utilidad por venta, comisión discriminada</h4>
-          <p class="text-xs text-gray-400 mt-0.5">Ordenado de peor a mejor utilidad neta. Usa el % de comisión propio de la venta si viene de un proyecto, 25% por defecto en paneles.</p>
+        <div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between gap-3">
+          <div>
+            <h4 class="font-semibold text-gray-700 text-sm">Detalle de utilidad por venta, comisión discriminada</h4>
+            <p class="text-xs text-gray-400 mt-0.5">Ordenado de peor a mejor utilidad neta. Usa el % de comisión propio de la venta si viene de un proyecto, 25% por defecto en paneles.</p>
+          </div>
+          <button onclick="exportarRentabilidadExcel()"
+            class="shrink-0 bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+            📥 Excel
+          </button>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
@@ -1523,6 +1798,51 @@ async function renderCalce() {
         </div>
       </div>
     `
+
+    window.exportarRentabilidadExcel = () => {
+      const filas = [
+        [{ v: 'RENTABILIDAD — UTILIDAD CON COMISIÓN DISCRIMINADA', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
+          { v: 'Venta', s: ESTILOS.header }, { v: 'Costo', s: ESTILOS.header },
+          { v: 'Utilidad bruta', s: ESTILOS.header }, { v: '% Com.', s: ESTILOS.header },
+          { v: 'Comisión', s: ESTILOS.header }, { v: 'Utilidad neta', s: ESTILOS.header },
+          { v: 'Margen neto %', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      ;[...porCot].sort((a, b) => a.utilidadNeta - b.utilidadNeta).forEach((c, i) => {
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        filas.push([
+          { v: `2026-${String(c.numero).padStart(3,'0')}`, s: { ...est, font: { bold: true } } },
+          { v: c.clientes?.nombre || '', s: est },
+          { v: c.venta, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.costo, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `C${row}-D${row}`, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.pctComision, t: 'n', s: { ...est, ...ESTILOS.center } },
+          { f: `E${row}*F${row}/100`, t: 'n', s: { ...est, ...ESTILOS.moneyRed } },
+          { f: `E${row}-G${row}`, t: 'n', s: { ...est, font: { bold: true }, numFmt: '"U$S "#,##0.00' } },
+          { f: `IF(C${row}=0,0,H${row}/C${row}*100)`, t: 'n', s: { ...est, ...ESTILOS.pct } },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {},
+        { f: `SUM(C${filaIni}:C${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(D${filaIni}:D${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(E${filaIni}:E${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `IF(C${filaFin+1}=0,0,H${filaFin+1}/C${filaFin+1}*100)`, t: 'n', s: { font: { bold: true }, ...ESTILOS.pct } },
+      ])
+      descargarExcel(filas, {
+        nombreHoja: 'Rentabilidad',
+        nombreArchivo: `DACAR_rentabilidad_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 24, 14, 14, 14, 8, 14, 14, 12]
+      })
+    }
   }
 
   async function renderComisiones() {
@@ -1576,6 +1896,10 @@ async function renderCalce() {
             <button onclick="liquidarSeleccionados()"
               class="bg-purple-700 hover:bg-purple-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
               💸 Liquidar seleccionados
+            </button>
+            <button onclick="exportarComisionesExcel()"
+              class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-lg">
+              📥 Excel
             </button>
           </div>
         </div>
@@ -1632,6 +1956,49 @@ async function renderCalce() {
         <p class="text-gray-400 text-xs">Cargando...</p>
       </div>
     `
+
+    window.exportarComisionesExcel = () => {
+      const filas = [
+        [{ v: 'COMISIONES POR COBRO', s: ESTILOS.title }],
+        [],
+        [
+          { v: 'Fecha', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
+          { v: 'Ppto', s: ESTILOS.header }, { v: 'Cobrado U$S', s: ESTILOS.header },
+          { v: 'Utilidad del cobro', s: ESTILOS.header }, { v: '% Com.', s: ESTILOS.header },
+          { v: 'Comisión U$S', s: ESTILOS.header }, { v: 'Comisión $', s: ESTILOS.header },
+          { v: 'Estado', s: ESTILOS.header },
+        ]
+      ]
+      const filaIni = filas.length + 1
+      comisionesCalc.forEach((c, i) => {
+        const row = filas.length + 1
+        const est = filaAlt(i)
+        filas.push([
+          { v: new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR'), s: est },
+          { v: c.clientes?.nombre || '', s: est },
+          { v: c.cotizaciones?.numero ? '2026-' + String(c.cotizaciones.numero).padStart(3,'0') : '-', s: est },
+          { v: c.monto_usd || 0, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.utilidadDelCobro, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { v: c.pctComision, t: 'n', s: { ...est, ...ESTILOS.center } },
+          { v: c.comision, t: 'n', s: { ...est, ...ESTILOS.money } },
+          { f: `G${row}*${c.tc || 1150}`, t: 'n', s: { ...est, ...ESTILOS.moneyAR } },
+          { v: c.liquidado ? 'Liquidado' : 'Pendiente', s: est },
+        ])
+      })
+      const filaFin = filas.length
+      filas.push([
+        { v: 'TOTALES', s: ESTILOS.bold }, {}, {},
+        { f: `SUM(D${filaIni}:D${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(E${filaIni}:E${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+      ])
+      descargarExcel(filas, {
+        nombreHoja: 'Comisiones',
+        nombreArchivo: `DACAR_comisiones_${fechaArchivo()}.xlsx`,
+        colWidths: [12, 24, 12, 14, 16, 8, 14, 14, 12]
+      })
+    }
 
     // Cargar historial
     cargarHistorialLiquidaciones()
