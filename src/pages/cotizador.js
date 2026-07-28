@@ -399,6 +399,10 @@ contenedor.innerHTML = `
        class="flex-1 bg-gray-300 text-gray-500 font-bold py-3 rounded-xl cursor-not-allowed">
        📄 Descargar PDF
      </button>
+     <button id="btn-pdf-iva" disabled
+       class="flex-1 bg-gray-300 text-gray-500 font-bold py-3 rounded-xl cursor-not-allowed">
+       📄 PDF con IVA (21%)
+     </button>
      <button id="btn-alternativa"
        class="flex-1 bg-indigo-600 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl">
        🔀 Crear alternativa
@@ -1261,12 +1265,22 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
     btnPdf.disabled = false
     btnPdf.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
   }
+  const btnPdfIva = document.getElementById('btn-pdf-iva')
+  if (btnPdfIva) {
+    btnPdfIva.disabled = false
+    btnPdfIva.className = 'flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl'
+  }
 
   alert('¡Cotización ' + cot.numero + ' guardada con éxito!');
 // Listener PDF
   if (btnPdf) {
     btnPdf.onclick = () => {
       if (cotizacionGuardada) generarPDF(cotizacionGuardada, empresaActual)
+    }
+  }
+  if (btnPdfIva) {
+    btnPdfIva.onclick = () => {
+      if (cotizacionGuardada) generarPDF(cotizacionGuardada, empresaActual, { conIva: true })
     }
   }
   // Enviar a Google Sheets

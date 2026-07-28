@@ -1,7 +1,9 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
-export async function generarPDF(cot, empresa) {
+export async function generarPDF(cot, empresa, opciones = {}) {
+  const conIva = !!opciones.conIva
+  const factorIva = conIva ? 1.21 : 1
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
 
@@ -46,8 +48,8 @@ export async function generarPDF(cot, empresa) {
     const cant    = esPanel ? (it.chapas ? it.chapas : '-') : it.cant
     const largo   = esPanel && it.chapas ? it.largo : '-'
     const m2un    = esPanel ? (it.m2 || '-') : '-'
-    const pu      = `U$S ${(it.precio_unit || 0).toFixed(2)}`
-    const sub     = `U$S ${(it.subtotal || 0).toFixed(2)}`
+    const pu      = `U$S ${((it.precio_unit || 0) * factorIva).toFixed(2)}`
+    const sub     = `U$S ${((it.subtotal || 0) * factorIva).toFixed(2)}`
     return [desc, cant, largo, m2un, pu, sub]
   })
 
@@ -81,15 +83,15 @@ export async function generarPDF(cot, empresa) {
   if (cot.descuento_pct > 0) {
     const descMon = (cot.total_final / (1 - cot.descuento_pct / 100)) * (cot.descuento_pct / 100)
     doc.text('Descuento especial:', cx + 2, y + 6)
-    doc.text(`- U$S ${descMon.toFixed(2)}`, pw - 10, y + 6, { align: 'right' })
+    doc.text(`- U$S ${(descMon * factorIva).toFixed(2)}`, pw - 10, y + 6, { align: 'right' })
   }
 
   doc.setFontSize(16).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
-  doc.text('TOTAL PRESUPUESTADO', 10, y + 18)
-  doc.text(`U$S ${(cot.total_final || 0).toLocaleString('es-AR', { minimumFractionDigits: 3 })}`, pw - 10, y + 18, { align: 'right' })
+  doc.text(conIva ? 'TOTAL CON IVA (21%)' : 'TOTAL PRESUPUESTADO', 10, y + 18)
+  doc.text(`U$S ${((cot.total_final || 0) * factorIva).toLocaleString('es-AR', { minimumFractionDigits: 3 })}`, pw - 10, y + 18, { align: 'right' })
 
   doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(100)
-  doc.text('(Precios Netos / Más IVA)', 10, y + 24)
+  doc.text(conIva ? '(Precios con IVA 21% incluido)' : '(Precios Netos / Más IVA)', 10, y + 24)
 
   // Condiciones
   const cy = y + 36
@@ -115,7 +117,7 @@ export async function generarPDF(cot, empresa) {
     pw / 2, pieY, { align: 'center' }
   )
 
-  doc.save(`Presupuesto_DACAR_2026-${String(cot.numero).padStart(3,'0')}.pdf`)
+  doc.save(`Presupuesto_DACAR_2026-${String(cot.numero).padStart(3,'0')}${conIva ? '_con_IVA' : ''}.pdf`)
 }
 
 function cargarImagen(url) {
