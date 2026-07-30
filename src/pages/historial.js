@@ -90,30 +90,24 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
   todasLasCots = data || []
   renderLista(todasLasCots)
 
-  document.getElementById('busca-hist').addEventListener('input', e => {
-    const txt = e.target.value.toLowerCase()
+  function aplicarFiltros() {
+    const txt = document.getElementById('busca-hist').value.toLowerCase()
     const filtradas = todasLasCots
       .filter(c => !filtroEstado || c.estado === filtroEstado)
       .filter(c => {
         const nombre = c.clientes?.nombre?.toLowerCase() || ''
         const obra   = c.clientes?.obra?.toLowerCase() || ''
         const nro    = String(c.numero)
-        return nombre.includes(txt) || obra.includes(txt) || nro.includes(txt)
+        return !txt || nombre.includes(txt) || obra.includes(txt) || nro.includes(txt)
       })
     renderLista(filtradas)
-  })
+  }
+
+  document.getElementById('busca-hist').addEventListener('input', aplicarFiltros)
 
   window.filtrarEstado = (estado) => {
     filtroEstado = estado
-    const txt = document.getElementById('busca-hist').value.toLowerCase()
-    const filtradas = todasLasCots
-      .filter(c => !estado || c.estado === estado)
-      .filter(c => {
-        const nombre = c.clientes?.nombre?.toLowerCase() || ''
-        const obra   = c.clientes?.obra?.toLowerCase() || ''
-        return !txt || nombre.includes(txt) || obra.includes(txt)
-      })
-    renderLista(filtradas)
+    aplicarFiltros()
   }
 
   window.cambiarEstado = async (id, nuevoEstado) => {
@@ -125,7 +119,7 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
     // Cerrar modal y actualizar lista solo si todavía estamos en historial
     document.querySelectorAll('[data-hist-modal]').forEach(m => m.remove())
     if (!document.getElementById('lista-hist')) return
-    renderLista(todasLasCots.filter(c => !filtroEstado || c.estado === filtroEstado))
+    aplicarFiltros()
   }
 
   window.abrirEnCotizador = async (id) => {
@@ -260,7 +254,14 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
             </div>
           </div>
           <div class="flex items-center gap-3 flex-shrink-0">
-            <span class="px-2 py-1 rounded-full text-xs font-medium ${estado.color}">${estado.label}</span>
+            <div class="flex gap-1 flex-wrap max-w-[220px]">
+              ${Object.entries(ESTADOS).map(([key, val]) => `
+                <button onclick="cambiarEstado('${cot.id}', '${key}')"
+                  class="px-2 py-1 rounded-full text-[10px] font-medium ${val.color} ${cot.estado === key ? 'ring-2 ring-offset-1 ring-gray-400' : 'opacity-40 hover:opacity-100'}">
+                  ${val.label}
+                </button>
+              `).join('')}
+            </div>
             <div class="text-right">
               <p class="text-xs text-gray-400">Total</p>
               <p class="font-bold text-green-700">U$S ${(cot.total_final || 0).toFixed(2)}</p>
