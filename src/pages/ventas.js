@@ -297,7 +297,7 @@ export async function renderVentas(contenedor) {
       )
       if (error) { alert('Error: ' + error.message); return }
 
-      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ ...f, numero: i + 1 })), tc, pct)
+      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ monto_usd: f.monto, concepto: f.concepto, numero: i + 1 })), tc, pct)
       modal.remove()
       renderVentas(contenedor)
     }
