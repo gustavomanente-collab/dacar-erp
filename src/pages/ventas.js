@@ -44,8 +44,10 @@ export async function renderVentas(contenedor) {
     const nro = `2026-${String(cot.numero).padStart(3,'0')}`
     const total = cot.total_bruto_usd || cot.total_final || 0
     const comps = comprobantesPorCot[cot.id] || []
+    const sumaComps = comps.reduce((s, c) => s + (c.monto_usd || 0), 0)
+    const desactualizado = comps.length && Math.abs(sumaComps - total) > 0.01
     return `
-      <div class="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:border-gray-400 transition-colors"
+      <div class="bg-white border ${desactualizado ? 'border-red-300' : 'border-gray-200'} rounded-xl px-4 py-3 shadow-sm cursor-pointer hover:border-gray-400 transition-colors"
         onclick="abrirFichaVentaFact('${cot.id}')">
         <div class="flex items-center justify-between">
           <div>
@@ -55,8 +57,8 @@ export async function renderVentas(contenedor) {
           </div>
           <div class="text-right">
             <p class="font-bold text-green-700 text-sm">U$S ${total.toFixed(2)}</p>
-            <p class="text-xs ${comps.length ? 'text-blue-600' : 'text-gray-400'}">
-              ${comps.length ? `🧾 ${comps.length} comprobante${comps.length === 1 ? '' : 's'} generado${comps.length === 1 ? '' : 's'}` : 'Sin generar'}
+            <p class="text-xs ${desactualizado ? 'text-red-600 font-bold' : comps.length ? 'text-blue-600' : 'text-gray-400'}">
+              ${desactualizado ? '⚠️ Comprobantes desactualizados' : comps.length ? `🧾 ${comps.length} comprobante${comps.length === 1 ? '' : 's'} generado${comps.length === 1 ? '' : 's'}` : 'Sin generar'}
             </p>
           </div>
         </div>
@@ -107,6 +109,9 @@ export async function renderVentas(contenedor) {
       ? comprobantesPorCot[cotId].map(c => ({ monto: c.monto_usd, concepto: c.concepto || '' }))
       : repartir(total, 1, nro)
 
+    const sumaGuardada = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
+    const desactualizado = Math.abs(sumaGuardada - total) > 0.01
+
     const modal = document.createElement('div')
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
     modal.innerHTML = `
@@ -132,6 +137,14 @@ export async function renderVentas(contenedor) {
             <p><strong>Razón social:</strong> ${cli.razon_social || cli.nombre || ''}</p>
             <p><strong>CUIT:</strong> ${cli.cuit || '—'} · <strong>Condición IVA:</strong> ${cli.condicion_iva || '—'}</p>
           ` : `<p class="text-orange-600">⚠️ Este cliente no tiene datos fiscales cargados. Se genera igual (son comprobantes internos), pero podés completarlos en Clientes.</p>`}
+        </div>
+
+        <div id="banner-desactualizado" class="${desactualizado ? '' : 'hidden'} bg-red-50 border-2 border-red-300 rounded-lg p-3 mb-4">
+          <p class="text-sm font-bold text-red-700">⚠️ Estos comprobantes están desactualizados</p>
+          <p class="text-xs text-red-600 mt-1">Suman U$S ${sumaGuardada.toFixed(2)}, pero el total actual de la venta es U$S ${total.toFixed(2)} (cambió después de generarlos, seguramente en "Configuración de cobro"). No mandes este PDF así — recalculá antes.</p>
+          <button onclick="recalcularComprobantes()" class="mt-2 bg-red-600 hover:bg-red-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg">
+            🔄 Recalcular montos al total actual (U$S ${total.toFixed(2)})
+          </button>
         </div>
 
         <div class="flex items-center justify-between mb-3">
@@ -182,8 +195,8 @@ export async function renderVentas(contenedor) {
       const dif = total - suma
       msg.textContent = Math.abs(dif) < 0.01
         ? '✅ La suma coincide con el total a facturar.'
-        : `⚠️ La suma (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}.`
-      msg.className = 'text-xs mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-green-600' : 'text-orange-600')
+        : `⚠️ La suma (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}. No generes el PDF así.`
+      msg.className = 'mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-xs text-green-600' : 'text-sm font-bold text-red-600')
     }
 
     function fila(f, i) {
@@ -218,6 +231,11 @@ export async function renderVentas(contenedor) {
 
     window.dividirComprobantes = (n) => {
       filasForm = repartir(total, n, nro)
+      renderForm()
+    }
+    window.recalcularComprobantes = () => {
+      filasForm = repartir(total, filasForm.length, nro)
+      document.getElementById('banner-desactualizado').classList.add('hidden')
       renderForm()
     }
     window.editComprobante = (i, campo, valor) => {
