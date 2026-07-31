@@ -304,24 +304,62 @@ contenedor.innerHTML = `
           ${esGerencia || esAdmin ? `
           <div class="bg-gray-50 rounded-lg p-3 mb-4">
             <p class="text-xs font-semibold text-gray-600 mb-2">Configuración de cobro</p>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">Facturación</label>
-                <select id="ficha-fact" class="w-full rounded border-gray-300 text-xs">
-                  <option value="0" ${!cot.facturado ? 'selected' : ''}>Sin factura</option>
-                  <option value="10.5" ${cot.facturado && cot.iva_pct == 10.5 ? 'selected' : ''}>IVA 10.5%</option>
-                  <option value="21" ${cot.facturado && cot.iva_pct == 21 ? 'selected' : ''}>IVA 21%</option>
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs text-gray-500 mb-1">T/C</label>
-                <input id="ficha-tc" type="number" value="${cot.tc_cobro || 1150}" class="w-full rounded border-gray-300 text-xs" />
-              </div>
-              <div class="flex items-end">
-                <button onclick="guardarConfigFicha('${cot.id}', ${cot.total_final})"
-                  class="w-full bg-gray-700 text-white text-xs py-1.5 rounded">Guardar</button>
+            <div class="flex gap-2 mb-3">
+              <button onclick="setTipoVenta('empresa')" id="btn-tipo-empresa"
+                class="flex-1 py-1.5 rounded-lg text-xs font-medium border ${(cot.tipo_venta || 'empresa') === 'empresa' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300 text-gray-600'}">
+                Empresa (neto + IVA)
+              </button>
+              <button onclick="setTipoVenta('consumidor_final')" id="btn-tipo-cf"
+                class="flex-1 py-1.5 rounded-lg text-xs font-medium border ${cot.tipo_venta === 'consumidor_final' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300 text-gray-600'}">
+                Consumidor Final (precio final)
+              </button>
+            </div>
+
+            <div id="bloq-tipo-empresa" class="${(cot.tipo_venta || 'empresa') === 'empresa' ? '' : 'hidden'}">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Facturación</label>
+                  <select id="ficha-fact" class="w-full rounded border-gray-300 text-xs">
+                    <option value="0" ${!cot.facturado ? 'selected' : ''}>Sin factura</option>
+                    <option value="10.5" ${cot.facturado && cot.iva_pct == 10.5 ? 'selected' : ''}>IVA 10.5%</option>
+                    <option value="21" ${cot.facturado && cot.iva_pct == 21 ? 'selected' : ''}>IVA 21%</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">T/C</label>
+                  <input id="ficha-tc" type="number" value="${cot.tc_cobro || 1150}" class="w-full rounded border-gray-300 text-xs" />
+                </div>
               </div>
             </div>
+
+            <div id="bloq-tipo-cf" class="${cot.tipo_venta === 'consumidor_final' ? '' : 'hidden'}">
+              <p class="text-xs text-gray-500 mb-2">Precio final (neto + 21% IVA), como ya se le mostró al cliente: <strong>U$S ${(cot.total_final * 1.21).toFixed(2)}</strong></p>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">¿Se factura?</label>
+                  <select id="ficha-cf-factura" class="w-full rounded border-gray-300 text-xs" onchange="toggleDescContado()">
+                    <option value="si" ${cot.tipo_venta === 'consumidor_final' && !cot.descuento_contado_pct ? 'selected' : ''}>Sí — precio final tal cual</option>
+                    <option value="no" ${cot.tipo_venta === 'consumidor_final' && cot.descuento_contado_pct > 0 ? 'selected' : ''}>No — descuento por pago de contado</option>
+                  </select>
+                </div>
+                <div id="bloq-desc-contado" class="${cot.descuento_contado_pct > 0 ? '' : 'hidden'}">
+                  <label class="block text-xs text-gray-500 mb-1">Descuento %</label>
+                  <input id="ficha-cf-desc" type="number" value="${cot.descuento_contado_pct || 10}" class="w-full rounded border-gray-300 text-xs" oninput="actualizarTotalCF()" />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">T/C</label>
+                  <input id="ficha-tc-cf" type="number" value="${cot.tc_cobro || 1150}" class="w-full rounded border-gray-300 text-xs" />
+                </div>
+                <div class="flex items-end">
+                  <p class="text-xs text-gray-600">A cobrar: <strong id="total-cf-preview" class="text-green-700"></strong></p>
+                </div>
+              </div>
+            </div>
+
+            <button onclick="guardarConfigFicha('${cot.id}', ${cot.total_final})"
+              class="w-full mt-3 bg-gray-700 text-white text-xs py-1.5 rounded">Guardar</button>
           </div>
           ` : ''}
 
@@ -377,13 +415,59 @@ contenedor.innerHTML = `
       document.body.appendChild(modal)
       modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
 
+      window.setTipoVenta = (tipo) => {
+        document.getElementById('bloq-tipo-empresa').classList.toggle('hidden', tipo !== 'empresa')
+        document.getElementById('bloq-tipo-cf').classList.toggle('hidden', tipo !== 'consumidor_final')
+        document.getElementById('btn-tipo-empresa').className = `flex-1 py-1.5 rounded-lg text-xs font-medium border ${tipo === 'empresa' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300 text-gray-600'}`
+        document.getElementById('btn-tipo-cf').className = `flex-1 py-1.5 rounded-lg text-xs font-medium border ${tipo === 'consumidor_final' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300 text-gray-600'}`
+        modal.dataset.tipoVenta = tipo
+        if (tipo === 'consumidor_final') actualizarTotalCF()
+      }
+      modal.dataset.tipoVenta = cot.tipo_venta === 'consumidor_final' ? 'consumidor_final' : 'empresa'
+
+      window.toggleDescContado = () => {
+        const seFactura = document.getElementById('ficha-cf-factura').value === 'si'
+        document.getElementById('bloq-desc-contado').classList.toggle('hidden', seFactura)
+        actualizarTotalCF()
+      }
+
+      window.actualizarTotalCF = () => {
+        const precioFinal = cot.total_final * 1.21
+        const seFactura = document.getElementById('ficha-cf-factura')?.value !== 'no'
+        const desc = seFactura ? 0 : (parseFloat(document.getElementById('ficha-cf-desc')?.value) || 0)
+        const totalACobrar = precioFinal * (1 - desc / 100)
+        const el = document.getElementById('total-cf-preview')
+        if (el) el.textContent = `U$S ${totalACobrar.toFixed(2)}`
+      }
+      actualizarTotalCF()
+
       window.guardarConfigFicha = async (id, totalNeto) => {
-        const ivaPct = parseFloat(document.getElementById('ficha-fact').value) || 0
-        const tc = parseFloat(document.getElementById('ficha-tc').value) || 1150
-        const bruto = totalNeto * (1 + ivaPct / 100)
-        await supabase.from('cotizaciones').update({
-          facturado: ivaPct > 0, iva_pct: ivaPct, total_bruto_usd: bruto, tc_cobro: tc
-        }).eq('id', id)
+        const tipo = modal.dataset.tipoVenta
+
+        if (tipo === 'consumidor_final') {
+          const precioFinal = totalNeto * 1.21
+          const seFactura = document.getElementById('ficha-cf-factura').value !== 'no'
+          const desc = seFactura ? 0 : (parseFloat(document.getElementById('ficha-cf-desc').value) || 0)
+          const tc = parseFloat(document.getElementById('ficha-tc-cf').value) || 1150
+          const bruto = precioFinal * (1 - desc / 100)
+          await supabase.from('cotizaciones').update({
+            tipo_venta: 'consumidor_final',
+            facturado: seFactura,
+            iva_pct: 21,
+            descuento_contado_pct: desc,
+            total_bruto_usd: bruto,
+            tc_cobro: tc
+          }).eq('id', id)
+        } else {
+          const ivaPct = parseFloat(document.getElementById('ficha-fact').value) || 0
+          const tc = parseFloat(document.getElementById('ficha-tc').value) || 1150
+          const bruto = totalNeto * (1 + ivaPct / 100)
+          await supabase.from('cotizaciones').update({
+            tipo_venta: 'empresa',
+            facturado: ivaPct > 0, iva_pct: ivaPct, total_bruto_usd: bruto, tc_cobro: tc,
+            descuento_contado_pct: 0
+          }).eq('id', id)
+        }
         modal.remove()
         renderPendientes()
       }

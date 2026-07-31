@@ -123,11 +123,13 @@ export async function generarPDF(cot, empresa, opciones = {}) {
 // ════════════════════════════════════════════════════════
 // PDF DE PEDIDO DE FACTURACIÓN (interno, para administración)
 // ════════════════════════════════════════════════════════
-export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150, pctImpuesto = 21) {
-  const factor = 1 + (pctImpuesto || 0) / 100
-  const doc = new jsPDF('l')
+export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
+  const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
   const nro = `2026-${String(cot.numero).padStart(3,'0')}`
+  const tipoVentaTxt = cot.tipo_venta === 'consumidor_final'
+    ? (cot.descuento_contado_pct > 0 ? `Consumidor Final · ${cot.descuento_contado_pct}% off por contado` : 'Consumidor Final · precio final')
+    : (cot.facturado ? `Empresa · IVA ${cot.iva_pct}%` : 'Empresa · sin factura')
 
   doc.setFontSize(14).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
   doc.text('PEDIDO DE FACTURACIÓN INTERNO', 10, 16)
@@ -136,7 +138,7 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150, pc
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
   doc.text(`Ppto de referencia: ${nro}`, 10, 28)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C: $ ${tc}  ·  Impuesto: ${pctImpuesto}%`, pw - 10, 28, { align: 'right' })
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C: $ ${tc}  ·  ${tipoVentaTxt}`, pw - 10, 28, { align: 'right' })
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
   doc.text(`Cliente: ${cliente?.nombre || cot.cliente_nombre || ''}`, 10, 36)
@@ -152,43 +154,37 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150, pc
   }
 
   const filas = comprobantes.map((c, i) => {
-    const netoUsd = c.monto_usd || 0
+    const monto = c.monto_usd || 0
     return [
       String(i + 1),
       c.concepto || `Comprobante ${i + 1} de ${comprobantes.length} — Ppto ${nro}`,
-      `U$S ${netoUsd.toFixed(2)}`,
-      `$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}`,
-      `U$S ${(netoUsd * factor).toFixed(2)}`,
-      `$ ${Math.round(netoUsd * factor * tc).toLocaleString('es-AR')}`,
+      `U$S ${monto.toFixed(2)}`,
+      `$ ${Math.round(monto * tc).toLocaleString('es-AR')}`,
     ]
   })
-  const totalNetoUsd = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
+  const totalUsd = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
 
   autoTable(doc, {
     startY: y + 4,
-    head: [['N°', 'CONCEPTO', 'NETO U$S', 'NETO $', `C/IMP. (${pctImpuesto}%) U$S`, `C/IMP. (${pctImpuesto}%) $`]],
+    head: [['N°', 'CONCEPTO', 'MONTO U$S', 'MONTO $']],
     body: filas,
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
     bodyStyles: { fontSize: 9 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 12 },
-      2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 32 },
-      4: { halign: 'right', cellWidth: 32 }, 5: { halign: 'right', cellWidth: 32 },
+      2: { halign: 'right', cellWidth: 35 }, 3: { halign: 'right', cellWidth: 35 },
     },
     foot: [['', 'TOTAL',
-      `U$S ${totalNetoUsd.toFixed(2)}`,
-      `$ ${Math.round(totalNetoUsd * tc).toLocaleString('es-AR')}`,
-      `U$S ${(totalNetoUsd * factor).toFixed(2)}`,
-      `$ ${Math.round(totalNetoUsd * factor * tc).toLocaleString('es-AR')}`,
+      `U$S ${totalUsd.toFixed(2)}`,
+      `$ ${Math.round(totalUsd * tc).toLocaleString('es-AR')}`,
     ]],
     footStyles: { fillColor: [240, 240, 240], textColor: [15, 23, 42], fontStyle: 'bold', halign: 'right' }
   })
 
   const yFin = doc.lastAutoTable.finalY + 8
   doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(120)
-  doc.text(`Total del presupuesto original (neto): U$S ${(cot.total_bruto_usd || cot.total_final || 0).toFixed(2)}`, 10, yFin)
-  doc.text('DACAR factura neto — el IVA lo calcula el sistema de facturación. Documento interno para Administración.', 10, yFin + 5)
+  doc.text('Documento interno para Administración.', 10, yFin)
 
   doc.save(`Facturacion_${nro}.pdf`)
 }
