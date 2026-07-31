@@ -7,6 +7,7 @@ import { renderHistorial } from './pages/historial.js'
 import { renderFinanzas } from './pages/finanzas.js'
 import { renderDashboard } from './pages/dashboard.js'
 import { renderProyectos } from './pages/proyectos.js'
+import { renderVentas } from './pages/ventas.js'
 
 const app = document.getElementById('app')
 let perfilGlobal = null
@@ -112,6 +113,8 @@ if (pagina === 'dashboard') {
     renderHistorial(contenido)
   } else if (pagina === 'finanzas') {
     renderFinanzas(contenido, perfilGlobal)
+  } else if (pagina === 'ventas') {
+    renderVentas(contenido)
   } else {
     // Por defecto según rol
     if (perfilGlobal?.role === 'gerencia') {

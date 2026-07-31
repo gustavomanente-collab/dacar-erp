@@ -16,6 +16,9 @@ export function renderNavbar(perfil) {
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Historial</button>
     <button onclick="navigate('finanzas')"
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Finanzas</button>
+    ${esGerencia || esAdmin ? `
+    <button onclick="navigate('ventas')"
+      class="text-sm text-gray-600 hover:text-green-700 font-medium">Ventas</button>` : ''}
     ${esGerencia ? `<button onclick="navigate('proyectos')"
       class="text-sm text-gray-600 hover:text-green-700 font-medium">Proyectos</button>` : ''}
   `
@@ -42,6 +45,11 @@ export function renderNavbar(perfil) {
       class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
       💰 Finanzas
     </button>
+    ${esGerencia || esAdmin ? `
+    <button onclick="navigate('ventas'); toggleMenu()"
+      class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
+      🧾 Ventas
+    </button>` : ''}
     ${esGerencia ? `<button onclick="navigate('proyectos'); toggleMenu()"
       class="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg font-medium">
       🏗️ Proyectos

@@ -120,6 +120,61 @@ export async function generarPDF(cot, empresa, opciones = {}) {
   doc.save(`Presupuesto_DACAR_2026-${String(cot.numero).padStart(3,'0')}${conIva ? '_con_IVA' : ''}.pdf`)
 }
 
+// ════════════════════════════════════════════════════════
+// PDF DE PEDIDO DE FACTURACIÓN (interno, para administración)
+// ════════════════════════════════════════════════════════
+export function generarPDFComprobantes(cot, cliente, comprobantes) {
+  const doc = new jsPDF()
+  const pw = doc.internal.pageSize.getWidth()
+  const nro = `2026-${String(cot.numero).padStart(3,'0')}`
+
+  doc.setFontSize(14).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text('PEDIDO DE FACTURACIÓN INTERNO', 10, 16)
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.8)
+  doc.line(10, 20, pw - 10, 20)
+
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text(`Ppto de referencia: ${nro}`, 10, 28)
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}`, pw - 10, 28, { align: 'right' })
+
+  doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text(`Cliente: ${cliente?.nombre || cot.cliente_nombre || ''}`, 10, 36)
+  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(60)
+  let y = 42
+  if (cliente?.razon_social) { doc.text(`Razón social: ${cliente.razon_social}`, 10, y); y += 5 }
+  if (cliente?.cuit)         { doc.text(`CUIT: ${cliente.cuit}`, 10, y); y += 5 }
+  if (cliente?.condicion_iva){ doc.text(`Condición IVA: ${cliente.condicion_iva}`, 10, y); y += 5 }
+  if (!cliente?.cuit && !cliente?.razon_social) {
+    doc.setFont('helvetica', 'italic').setTextColor(180, 80, 0)
+    doc.text('(Sin datos fiscales cargados en el cliente — completar antes de facturar)', 10, y)
+    y += 5
+  }
+
+  const filas = comprobantes.map((c, i) => [
+    String(i + 1), c.concepto || `Comprobante ${i + 1} de ${comprobantes.length} — Ppto ${nro}`, `U$S ${(c.monto_usd || 0).toFixed(2)}`
+  ])
+  const totalComprobantes = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
+
+  autoTable(doc, {
+    startY: y + 4,
+    head: [['N°', 'CONCEPTO', 'MONTO']],
+    body: filas,
+    theme: 'grid',
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 9 },
+    columnStyles: { 0: { halign: 'center', cellWidth: 12 }, 2: { halign: 'right', cellWidth: 32 } },
+    foot: [['', 'TOTAL', `U$S ${totalComprobantes.toFixed(2)}`]],
+    footStyles: { fillColor: [240, 240, 240], textColor: [15, 23, 42], fontStyle: 'bold', halign: 'right' }
+  })
+
+  const yFin = doc.lastAutoTable.finalY + 8
+  doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(120)
+  doc.text(`Total del presupuesto original: U$S ${(cot.total_bruto_usd || cot.total_final || 0).toFixed(2)}`, 10, yFin)
+  doc.text('Documento interno — comprobantes de venta a confeccionar por Administración.', 10, yFin + 5)
+
+  doc.save(`Facturacion_${nro}.pdf`)
+}
+
 function cargarImagen(url) {
   return new Promise((res, rej) => {
     const img = new Image()

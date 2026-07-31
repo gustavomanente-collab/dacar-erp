@@ -54,6 +54,29 @@ export async function renderClientes(contenedor) {
             <label class="block text-sm font-medium text-gray-700 mb-1">Obra</label>
             <input id="campo-obra" type="text" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
           </div>
+          <div class="border-t pt-4">
+            <p class="text-xs font-semibold text-gray-500 mb-2">Datos fiscales (opcional, para facturación)</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">CUIT</label>
+                <input id="campo-cuit" type="text" placeholder="20-12345678-9" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Condición IVA</label>
+                <select id="campo-condicion-iva" class="w-full rounded-lg border-gray-300 shadow-sm text-sm">
+                  <option value="">-- Sin especificar --</option>
+                  <option value="Responsable Inscripto">Responsable Inscripto</option>
+                  <option value="Monotributo">Monotributo</option>
+                  <option value="Exento">Exento</option>
+                  <option value="Consumidor Final">Consumidor Final</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Razón social</label>
+              <input id="campo-razon-social" type="text" placeholder="Si difiere del nombre" class="w-full rounded-lg border-gray-300 shadow-sm text-sm" />
+            </div>
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
             <textarea id="campo-notas" rows="2" class="w-full rounded-lg border-gray-300 shadow-sm text-sm"></textarea>
@@ -88,7 +111,9 @@ export async function renderClientes(contenedor) {
       [
         { v: 'Código', s: ESTILOS.header }, { v: 'Nombre', s: ESTILOS.header },
         { v: 'Teléfono', s: ESTILOS.header }, { v: 'Dirección', s: ESTILOS.header },
-        { v: 'Obra', s: ESTILOS.header }, { v: 'Notas', s: ESTILOS.header },
+        { v: 'Obra', s: ESTILOS.header }, { v: 'CUIT', s: ESTILOS.header },
+        { v: 'Razón social', s: ESTILOS.header }, { v: 'Condición IVA', s: ESTILOS.header },
+        { v: 'Notas', s: ESTILOS.header },
       ]
     ]
     ;(clientes || []).forEach((c, i) => {
@@ -99,6 +124,9 @@ export async function renderClientes(contenedor) {
         { v: c.telefono || '', s: est },
         { v: c.direccion || '', s: est },
         { v: c.obra || '', s: est },
+        { v: c.cuit || '', s: est },
+        { v: c.razon_social || '', s: est },
+        { v: c.condicion_iva || '', s: est },
         { v: c.notas || '', s: est },
       ])
     })
@@ -107,7 +135,7 @@ export async function renderClientes(contenedor) {
     descargarExcel(filas, {
       nombreHoja: 'Clientes',
       nombreArchivo: `DACAR_clientes_${fechaArchivo()}.xlsx`,
-      colWidths: [12, 30, 16, 30, 22, 34]
+      colWidths: [12, 30, 16, 30, 22, 16, 26, 18, 34]
     })
   })
 
@@ -215,6 +243,7 @@ export async function renderClientes(contenedor) {
               ${cli.telefono ? `<p>📞 ${cli.telefono}</p>` : ''}
               ${cli.direccion ? `<p>📍 ${cli.direccion}</p>` : ''}
               ${cli.obra ? `<p>🏗️ ${cli.obra}</p>` : ''}
+              ${cli.cuit || cli.razon_social || cli.condicion_iva ? `<p>🧾 ${[cli.razon_social, cli.cuit, cli.condicion_iva].filter(Boolean).join(' · ')}</p>` : ''}
               ${cli.notas ? `<p>📝 ${cli.notas}</p>` : ''}
             </div>
           </div>
@@ -477,6 +506,9 @@ export async function renderClientes(contenedor) {
       document.getElementById('campo-telefono').value  = c.telefono || ''
       document.getElementById('campo-direccion').value = c.direccion || ''
       document.getElementById('campo-obra').value      = c.obra || ''
+      document.getElementById('campo-cuit').value          = c.cuit || ''
+      document.getElementById('campo-razon-social').value  = c.razon_social || ''
+      document.getElementById('campo-condicion-iva').value = c.condicion_iva || ''
       document.getElementById('campo-notas').value     = c.notas || ''
       document.getElementById('modal-cliente').classList.remove('hidden')
     }
@@ -563,6 +595,9 @@ export async function renderClientes(contenedor) {
     document.getElementById('campo-telefono').value  = ''
     document.getElementById('campo-direccion').value = ''
     document.getElementById('campo-obra').value      = ''
+    document.getElementById('campo-cuit').value          = ''
+    document.getElementById('campo-razon-social').value  = ''
+    document.getElementById('campo-condicion-iva').value = ''
     document.getElementById('campo-notas').value     = ''
     document.getElementById('error-cliente').classList.add('hidden')
     document.getElementById('modal-cliente').classList.remove('hidden')
@@ -586,6 +621,9 @@ export async function renderClientes(contenedor) {
       telefono:  document.getElementById('campo-telefono').value.trim(),
       direccion: document.getElementById('campo-direccion').value.trim(),
       obra:      document.getElementById('campo-obra').value.trim(),
+      cuit:          document.getElementById('campo-cuit').value.trim() || null,
+      razon_social:  document.getElementById('campo-razon-social').value.trim() || null,
+      condicion_iva: document.getElementById('campo-condicion-iva').value || null,
       notas:     document.getElementById('campo-notas').value.trim(),
     }
 
