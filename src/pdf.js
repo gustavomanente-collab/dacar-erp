@@ -123,7 +123,8 @@ export async function generarPDF(cot, empresa, opciones = {}) {
 // ════════════════════════════════════════════════════════
 // PDF DE PEDIDO DE FACTURACIÓN (interno, para administración)
 // ════════════════════════════════════════════════════════
-export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
+export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150, pctImpuesto = 21) {
+  const factor = 1 + (pctImpuesto || 0) / 100
   const doc = new jsPDF('l')
   const pw = doc.internal.pageSize.getWidth()
   const nro = `2026-${String(cot.numero).padStart(3,'0')}`
@@ -135,7 +136,7 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
   doc.text(`Ppto de referencia: ${nro}`, 10, 28)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C usado: $ ${tc}`, pw - 10, 28, { align: 'right' })
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C: $ ${tc}  ·  Impuesto: ${pctImpuesto}%`, pw - 10, 28, { align: 'right' })
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
   doc.text(`Cliente: ${cliente?.nombre || cot.cliente_nombre || ''}`, 10, 36)
@@ -157,15 +158,15 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
       c.concepto || `Comprobante ${i + 1} de ${comprobantes.length} — Ppto ${nro}`,
       `U$S ${netoUsd.toFixed(2)}`,
       `$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}`,
-      `U$S ${(netoUsd * 1.21).toFixed(2)}`,
-      `$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}`,
+      `U$S ${(netoUsd * factor).toFixed(2)}`,
+      `$ ${Math.round(netoUsd * factor * tc).toLocaleString('es-AR')}`,
     ]
   })
   const totalNetoUsd = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
 
   autoTable(doc, {
     startY: y + 4,
-    head: [['N°', 'CONCEPTO', 'NETO U$S', 'NETO $', 'C/IVA (21%) U$S', 'C/IVA (21%) $']],
+    head: [['N°', 'CONCEPTO', 'NETO U$S', 'NETO $', `C/IMP. (${pctImpuesto}%) U$S`, `C/IMP. (${pctImpuesto}%) $`]],
     body: filas,
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
@@ -178,8 +179,8 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
     foot: [['', 'TOTAL',
       `U$S ${totalNetoUsd.toFixed(2)}`,
       `$ ${Math.round(totalNetoUsd * tc).toLocaleString('es-AR')}`,
-      `U$S ${(totalNetoUsd * 1.21).toFixed(2)}`,
-      `$ ${Math.round(totalNetoUsd * 1.21 * tc).toLocaleString('es-AR')}`,
+      `U$S ${(totalNetoUsd * factor).toFixed(2)}`,
+      `$ ${Math.round(totalNetoUsd * factor * tc).toLocaleString('es-AR')}`,
     ]],
     footStyles: { fillColor: [240, 240, 240], textColor: [15, 23, 42], fontStyle: 'bold', halign: 'right' }
   })

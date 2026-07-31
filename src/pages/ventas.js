@@ -99,7 +99,8 @@ export async function renderVentas(contenedor) {
     const cli = cot.clientes || {}
     const nro = `2026-${String(cot.numero).padStart(3,'0')}`
     const total = cot.total_bruto_usd || cot.total_final || 0
-    const tcInicial = (comprobantesPorCot[cotId] || [])[0]?.tc || cot.tc_cobro || 1150
+    const tcInicial  = (comprobantesPorCot[cotId] || [])[0]?.tc || cot.tc_cobro || 1150
+    const pctInicial = (comprobantesPorCot[cotId] || [])[0]?.pct_impuesto ?? 21
 
     let filasForm = (comprobantesPorCot[cotId] || []).length
       ? comprobantesPorCot[cotId].map(c => ({ monto: c.monto_usd, concepto: c.concepto || '' }))
@@ -127,10 +128,17 @@ export async function renderVentas(contenedor) {
 
         <div class="flex items-center justify-between mb-4">
           <p class="text-xs font-semibold text-gray-600">Dividir en:</p>
-          <div>
-            <label class="text-xs text-gray-500 mr-2">T/C $ x U$S</label>
-            <input id="tc-comprobantes" type="text" inputmode="decimal" value="${tcInicial}"
-              class="w-24 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+          <div class="flex items-center gap-4">
+            <div>
+              <label class="text-xs text-gray-500 mr-2">% Impuesto</label>
+              <input id="pct-comprobantes" type="text" inputmode="decimal" value="${pctInicial}"
+                class="w-16 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mr-2">T/C $ x U$S</label>
+              <input id="tc-comprobantes" type="text" inputmode="decimal" value="${tcInicial}"
+                class="w-24 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+            </div>
           </div>
         </div>
         <div class="flex gap-2 mb-4" id="divisor-blq">
@@ -144,7 +152,7 @@ export async function renderVentas(contenedor) {
 
         <div class="grid grid-cols-5 gap-2 px-2 mb-1 text-[10px] text-gray-400 font-semibold">
           <div>CONCEPTO</div><div class="text-right">NETO U$S</div><div class="text-right">NETO $</div>
-          <div class="text-right">C/IVA U$S</div><div class="text-right">C/IVA $</div>
+          <div id="lbl-iva-usd" class="text-right">C/IMP. U$S</div><div id="lbl-iva-ars" class="text-right">C/IMP. $</div>
         </div>
         <div id="comprobantes-form" class="space-y-2 mb-2"></div>
         <div class="grid grid-cols-5 gap-2 px-2 mb-1 text-xs font-bold text-gray-700 border-t pt-2">
@@ -172,15 +180,19 @@ export async function renderVentas(contenedor) {
     document.body.appendChild(modal)
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
 
-    const getTC = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
+    const getTC  = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
+    const getPct = () => parseMonto(document.getElementById('pct-comprobantes')?.value)
+    const getFactor = () => 1 + (getPct() || 0) / 100
 
     function actualizarResumen() {
-      const tc = getTC()
+      const tc = getTC(), factor = getFactor()
       const suma = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
       document.getElementById('tot-neto-usd').textContent = `U$S ${suma.toFixed(2)}`
       document.getElementById('tot-neto-ars').textContent = `$ ${Math.round(suma * tc).toLocaleString('es-AR')}`
-      document.getElementById('tot-iva-usd').textContent = `U$S ${(suma * 1.21).toFixed(2)}`
-      document.getElementById('tot-iva-ars').textContent = `$ ${Math.round(suma * 1.21 * tc).toLocaleString('es-AR')}`
+      document.getElementById('tot-iva-usd').textContent = `U$S ${(suma * factor).toFixed(2)}`
+      document.getElementById('tot-iva-ars').textContent = `$ ${Math.round(suma * factor * tc).toLocaleString('es-AR')}`
+      document.getElementById('lbl-iva-usd').textContent = `C/IMP. (${getPct()}%) U$S`
+      document.getElementById('lbl-iva-ars').textContent = `C/IMP. (${getPct()}%) $`
 
       const msg = document.getElementById('suma-msg')
       const dif = total - suma
@@ -190,7 +202,7 @@ export async function renderVentas(contenedor) {
       msg.className = 'text-xs mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-green-600' : 'text-orange-600')
     }
 
-    function fila(f, i, tc) {
+    function fila(f, i, tc, factor) {
       const netoUsd = parseMonto(f.monto) || 0
       return `
         <div class="grid grid-cols-5 gap-2 items-center bg-gray-50 rounded-lg p-2">
@@ -199,25 +211,25 @@ export async function renderVentas(contenedor) {
           <input type="text" inputmode="decimal" value="${f.monto}" class="w-full rounded border-gray-300 text-xs text-right"
             oninput="editComprobante(${i}, 'monto', this.value)" />
           <div id="neto-ars-${i}" class="text-right text-xs text-gray-600">$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}</div>
-          <div id="iva-usd-${i}" class="text-right text-xs text-gray-600">U$S ${(netoUsd * 1.21).toFixed(2)}</div>
-          <div id="iva-ars-${i}" class="text-right text-xs font-semibold text-gray-800">$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}</div>
+          <div id="iva-usd-${i}" class="text-right text-xs text-gray-600">U$S ${(netoUsd * factor).toFixed(2)}</div>
+          <div id="iva-ars-${i}" class="text-right text-xs font-semibold text-gray-800">$ ${Math.round(netoUsd * factor * tc).toLocaleString('es-AR')}</div>
         </div>
       `
     }
 
     // Recalcula solo las celdas de una fila (sin recrear los inputs, para no perder el foco al tipear)
     function actualizarFila(i) {
-      const tc = getTC()
+      const tc = getTC(), factor = getFactor()
       const netoUsd = parseMonto(filasForm[i].monto) || 0
       document.getElementById(`neto-ars-${i}`).textContent = `$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}`
-      document.getElementById(`iva-usd-${i}`).textContent = `U$S ${(netoUsd * 1.21).toFixed(2)}`
-      document.getElementById(`iva-ars-${i}`).textContent = `$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}`
+      document.getElementById(`iva-usd-${i}`).textContent = `U$S ${(netoUsd * factor).toFixed(2)}`
+      document.getElementById(`iva-ars-${i}`).textContent = `$ ${Math.round(netoUsd * factor * tc).toLocaleString('es-AR')}`
     }
 
     function renderForm() {
-      const tc = getTC()
+      const tc = getTC(), factor = getFactor()
       const cont = document.getElementById('comprobantes-form')
-      cont.innerHTML = filasForm.map((f, i) => fila(f, i, tc)).join('')
+      cont.innerHTML = filasForm.map((f, i) => fila(f, i, tc, factor)).join('')
 
       // Refrescar resaltado del divisor
       document.getElementById('divisor-blq').innerHTML = [1,2,3,4].map(n => `
@@ -254,6 +266,7 @@ export async function renderVentas(contenedor) {
       if (!filasValidas.length) { alert('Cargá al menos un monto'); return }
 
       const tc = getTC()
+      const pct = getPct()
       await supabase.from('comprobantes_venta').delete().eq('cotizacion_id', cId)
       const { error } = await supabase.from('comprobantes_venta').insert(
         filasValidas.map((f, i) => ({
@@ -262,11 +275,12 @@ export async function renderVentas(contenedor) {
           monto_usd: f.monto,
           concepto: f.concepto || `Comprobante ${i + 1} de ${filasValidas.length} — Ppto ${nro}`,
           tc,
+          pct_impuesto: pct,
         }))
       )
       if (error) { alert('Error: ' + error.message); return }
 
-      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ ...f, numero: i + 1 })), tc)
+      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ ...f, numero: i + 1 })), tc, pct)
       modal.remove()
       renderVentas(contenedor)
     }
@@ -274,7 +288,8 @@ export async function renderVentas(contenedor) {
     window.regenerarPDF = (cId) => {
       const comps = comprobantesPorCot[cId] || []
       const tc = comps[0]?.tc || getTC()
-      generarPDFComprobantes(cot, cli, comps, tc)
+      const pct = comps[0]?.pct_impuesto ?? getPct()
+      generarPDFComprobantes(cot, cli, comps, tc, pct)
     }
   }
 }
