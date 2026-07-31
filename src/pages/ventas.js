@@ -99,6 +99,7 @@ export async function renderVentas(contenedor) {
     const cli = cot.clientes || {}
     const nro = `2026-${String(cot.numero).padStart(3,'0')}`
     const total = cot.total_bruto_usd || cot.total_final || 0
+    const tcInicial = (comprobantesPorCot[cotId] || [])[0]?.tc || cot.tc_cobro || 1150
 
     let filasForm = (comprobantesPorCot[cotId] || []).length
       ? comprobantesPorCot[cotId].map(c => ({ monto: c.monto_usd, concepto: c.concepto || '' }))
@@ -107,12 +108,12 @@ export async function renderVentas(contenedor) {
     const modal = document.createElement('div')
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
     modal.innerHTML = `
-      <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:650px;max-height:90vh;overflow-y:auto;">
+      <div style="background:white;border-radius:16px;padding:24px;width:100%;max-width:750px;max-height:90vh;overflow-y:auto;">
         <div class="flex items-start justify-between mb-4">
           <div>
             <p class="text-xs text-gray-400">Pedido de facturación</p>
             <h3 class="text-xl font-black text-gray-900">${nro} — ${cli.nombre || ''}</h3>
-            <p class="text-sm text-gray-500">Total venta: U$S ${total.toFixed(2)}</p>
+            <p class="text-sm text-gray-500">Total venta (neto): U$S ${total.toFixed(2)}</p>
           </div>
           <button onclick="this.closest('[style]').remove()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
         </div>
@@ -124,7 +125,14 @@ export async function renderVentas(contenedor) {
           ` : `<p class="text-orange-600">⚠️ Este cliente no tiene datos fiscales cargados. Se genera igual (son comprobantes internos), pero podés completarlos en Clientes.</p>`}
         </div>
 
-        <p class="text-xs font-semibold text-gray-600 mb-2">Dividir en:</p>
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-xs font-semibold text-gray-600">Dividir en:</p>
+          <div>
+            <label class="text-xs text-gray-500 mr-2">T/C $ x U$S</label>
+            <input id="tc-comprobantes" type="text" inputmode="decimal" value="${tcInicial}"
+              class="w-24 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+          </div>
+        </div>
         <div class="flex gap-2 mb-4" id="divisor-blq">
           ${[1,2,3,4].map(n => `
             <button onclick="dividirComprobantes(${n})"
@@ -134,7 +142,18 @@ export async function renderVentas(contenedor) {
           `).join('')}
         </div>
 
+        <div class="grid grid-cols-5 gap-2 px-2 mb-1 text-[10px] text-gray-400 font-semibold">
+          <div>CONCEPTO</div><div class="text-right">NETO U$S</div><div class="text-right">NETO $</div>
+          <div class="text-right">C/IVA U$S</div><div class="text-right">C/IVA $</div>
+        </div>
         <div id="comprobantes-form" class="space-y-2 mb-2"></div>
+        <div class="grid grid-cols-5 gap-2 px-2 mb-1 text-xs font-bold text-gray-700 border-t pt-2">
+          <div>TOTALES</div>
+          <div id="tot-neto-usd" class="text-right"></div>
+          <div id="tot-neto-ars" class="text-right"></div>
+          <div id="tot-iva-usd" class="text-right"></div>
+          <div id="tot-iva-ars" class="text-right"></div>
+        </div>
         <p id="suma-msg" class="text-xs mb-4"></p>
 
         <div class="flex gap-3">
@@ -153,29 +172,52 @@ export async function renderVentas(contenedor) {
     document.body.appendChild(modal)
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
 
-    function renderForm() {
-      const cont = document.getElementById('comprobantes-form')
-      cont.innerHTML = filasForm.map((f, i) => `
-        <div class="grid grid-cols-4 gap-2 items-end bg-gray-50 rounded-lg p-2">
-          <div>
-            <label class="block text-[10px] text-gray-500 mb-1">Monto U$S</label>
-            <input type="text" inputmode="decimal" value="${f.monto}" class="w-full rounded border-gray-300 text-xs"
-              oninput="editComprobante(${i}, 'monto', this.value)" />
-          </div>
-          <div class="col-span-3">
-            <label class="block text-[10px] text-gray-500 mb-1">Concepto</label>
-            <input type="text" value="${f.concepto}" class="w-full rounded border-gray-300 text-xs"
-              oninput="editComprobante(${i}, 'concepto', this.value)" />
-          </div>
-        </div>
-      `).join('')
+    const getTC = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
+
+    function actualizarResumen() {
+      const tc = getTC()
       const suma = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
+      document.getElementById('tot-neto-usd').textContent = `U$S ${suma.toFixed(2)}`
+      document.getElementById('tot-neto-ars').textContent = `$ ${Math.round(suma * tc).toLocaleString('es-AR')}`
+      document.getElementById('tot-iva-usd').textContent = `U$S ${(suma * 1.21).toFixed(2)}`
+      document.getElementById('tot-iva-ars').textContent = `$ ${Math.round(suma * 1.21 * tc).toLocaleString('es-AR')}`
+
       const msg = document.getElementById('suma-msg')
       const dif = total - suma
       msg.textContent = Math.abs(dif) < 0.01
-        ? '✅ La suma coincide con el total de la venta.'
-        : `⚠️ La suma (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}.`
+        ? '✅ La suma (neto) coincide con el total de la venta.'
+        : `⚠️ La suma neto (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}.`
       msg.className = 'text-xs mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-green-600' : 'text-orange-600')
+    }
+
+    function fila(f, i, tc) {
+      const netoUsd = parseMonto(f.monto) || 0
+      return `
+        <div class="grid grid-cols-5 gap-2 items-center bg-gray-50 rounded-lg p-2">
+          <input type="text" value="${f.concepto}" class="w-full rounded border-gray-300 text-xs"
+            oninput="editComprobante(${i}, 'concepto', this.value)" />
+          <input type="text" inputmode="decimal" value="${f.monto}" class="w-full rounded border-gray-300 text-xs text-right"
+            oninput="editComprobante(${i}, 'monto', this.value)" />
+          <div id="neto-ars-${i}" class="text-right text-xs text-gray-600">$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}</div>
+          <div id="iva-usd-${i}" class="text-right text-xs text-gray-600">U$S ${(netoUsd * 1.21).toFixed(2)}</div>
+          <div id="iva-ars-${i}" class="text-right text-xs font-semibold text-gray-800">$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}</div>
+        </div>
+      `
+    }
+
+    // Recalcula solo las celdas de una fila (sin recrear los inputs, para no perder el foco al tipear)
+    function actualizarFila(i) {
+      const tc = getTC()
+      const netoUsd = parseMonto(filasForm[i].monto) || 0
+      document.getElementById(`neto-ars-${i}`).textContent = `$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}`
+      document.getElementById(`iva-usd-${i}`).textContent = `U$S ${(netoUsd * 1.21).toFixed(2)}`
+      document.getElementById(`iva-ars-${i}`).textContent = `$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}`
+    }
+
+    function renderForm() {
+      const tc = getTC()
+      const cont = document.getElementById('comprobantes-form')
+      cont.innerHTML = filasForm.map((f, i) => fila(f, i, tc)).join('')
 
       // Refrescar resaltado del divisor
       document.getElementById('divisor-blq').innerHTML = [1,2,3,4].map(n => `
@@ -184,6 +226,8 @@ export async function renderVentas(contenedor) {
           ${n}
         </button>
       `).join('')
+
+      actualizarResumen()
     }
     renderForm()
 
@@ -194,14 +238,13 @@ export async function renderVentas(contenedor) {
     window.editComprobante = (i, campo, valor) => {
       filasForm[i][campo] = valor
       if (campo === 'monto') {
-        const suma = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
-        const msg = document.getElementById('suma-msg')
-        const dif = total - suma
-        msg.textContent = Math.abs(dif) < 0.01
-          ? '✅ La suma coincide con el total de la venta.'
-          : `⚠️ La suma (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}.`
-        msg.className = 'text-xs mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-green-600' : 'text-orange-600')
+        actualizarFila(i)
+        actualizarResumen()
       }
+    }
+    window.actualizarTC = () => {
+      filasForm.forEach((f, i) => actualizarFila(i))
+      actualizarResumen()
     }
 
     window.guardarComprobantes = async (cId) => {
@@ -210,6 +253,7 @@ export async function renderVentas(contenedor) {
         .filter(f => f.monto > 0)
       if (!filasValidas.length) { alert('Cargá al menos un monto'); return }
 
+      const tc = getTC()
       await supabase.from('comprobantes_venta').delete().eq('cotizacion_id', cId)
       const { error } = await supabase.from('comprobantes_venta').insert(
         filasValidas.map((f, i) => ({
@@ -217,18 +261,20 @@ export async function renderVentas(contenedor) {
           numero: i + 1,
           monto_usd: f.monto,
           concepto: f.concepto || `Comprobante ${i + 1} de ${filasValidas.length} — Ppto ${nro}`,
+          tc,
         }))
       )
       if (error) { alert('Error: ' + error.message); return }
 
-      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ ...f, numero: i + 1 })))
+      generarPDFComprobantes(cot, cli, filasValidas.map((f, i) => ({ ...f, numero: i + 1 })), tc)
       modal.remove()
       renderVentas(contenedor)
     }
 
     window.regenerarPDF = (cId) => {
       const comps = comprobantesPorCot[cId] || []
-      generarPDFComprobantes(cot, cli, comps)
+      const tc = comps[0]?.tc || getTC()
+      generarPDFComprobantes(cot, cli, comps, tc)
     }
   }
 }

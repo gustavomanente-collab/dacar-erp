@@ -123,8 +123,8 @@ export async function generarPDF(cot, empresa, opciones = {}) {
 // ════════════════════════════════════════════════════════
 // PDF DE PEDIDO DE FACTURACIÓN (interno, para administración)
 // ════════════════════════════════════════════════════════
-export function generarPDFComprobantes(cot, cliente, comprobantes) {
-  const doc = new jsPDF()
+export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
+  const doc = new jsPDF('l')
   const pw = doc.internal.pageSize.getWidth()
   const nro = `2026-${String(cot.numero).padStart(3,'0')}`
 
@@ -135,7 +135,7 @@ export function generarPDFComprobantes(cot, cliente, comprobantes) {
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
   doc.text(`Ppto de referencia: ${nro}`, 10, 28)
-  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}`, pw - 10, 28, { align: 'right' })
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C usado: $ ${tc}`, pw - 10, 28, { align: 'right' })
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
   doc.text(`Cliente: ${cliente?.nombre || cot.cliente_nombre || ''}`, 10, 36)
@@ -150,27 +150,44 @@ export function generarPDFComprobantes(cot, cliente, comprobantes) {
     y += 5
   }
 
-  const filas = comprobantes.map((c, i) => [
-    String(i + 1), c.concepto || `Comprobante ${i + 1} de ${comprobantes.length} — Ppto ${nro}`, `U$S ${(c.monto_usd || 0).toFixed(2)}`
-  ])
-  const totalComprobantes = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
+  const filas = comprobantes.map((c, i) => {
+    const netoUsd = c.monto_usd || 0
+    return [
+      String(i + 1),
+      c.concepto || `Comprobante ${i + 1} de ${comprobantes.length} — Ppto ${nro}`,
+      `U$S ${netoUsd.toFixed(2)}`,
+      `$ ${Math.round(netoUsd * tc).toLocaleString('es-AR')}`,
+      `U$S ${(netoUsd * 1.21).toFixed(2)}`,
+      `$ ${Math.round(netoUsd * 1.21 * tc).toLocaleString('es-AR')}`,
+    ]
+  })
+  const totalNetoUsd = comprobantes.reduce((s, c) => s + (c.monto_usd || 0), 0)
 
   autoTable(doc, {
     startY: y + 4,
-    head: [['N°', 'CONCEPTO', 'MONTO']],
+    head: [['N°', 'CONCEPTO', 'NETO U$S', 'NETO $', 'C/IVA (21%) U$S', 'C/IVA (21%) $']],
     body: filas,
     theme: 'grid',
     headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
     bodyStyles: { fontSize: 9 },
-    columnStyles: { 0: { halign: 'center', cellWidth: 12 }, 2: { halign: 'right', cellWidth: 32 } },
-    foot: [['', 'TOTAL', `U$S ${totalComprobantes.toFixed(2)}`]],
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 12 },
+      2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 32 },
+      4: { halign: 'right', cellWidth: 32 }, 5: { halign: 'right', cellWidth: 32 },
+    },
+    foot: [['', 'TOTAL',
+      `U$S ${totalNetoUsd.toFixed(2)}`,
+      `$ ${Math.round(totalNetoUsd * tc).toLocaleString('es-AR')}`,
+      `U$S ${(totalNetoUsd * 1.21).toFixed(2)}`,
+      `$ ${Math.round(totalNetoUsd * 1.21 * tc).toLocaleString('es-AR')}`,
+    ]],
     footStyles: { fillColor: [240, 240, 240], textColor: [15, 23, 42], fontStyle: 'bold', halign: 'right' }
   })
 
   const yFin = doc.lastAutoTable.finalY + 8
   doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(120)
-  doc.text(`Total del presupuesto original: U$S ${(cot.total_bruto_usd || cot.total_final || 0).toFixed(2)}`, 10, yFin)
-  doc.text('Documento interno — comprobantes de venta a confeccionar por Administración.', 10, yFin + 5)
+  doc.text(`Total del presupuesto original (neto): U$S ${(cot.total_bruto_usd || cot.total_final || 0).toFixed(2)}`, 10, yFin)
+  doc.text('DACAR factura neto — el IVA lo calcula el sistema de facturación. Documento interno para Administración.', 10, yFin + 5)
 
   doc.save(`Facturacion_${nro}.pdf`)
 }
