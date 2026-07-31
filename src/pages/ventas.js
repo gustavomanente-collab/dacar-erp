@@ -102,10 +102,16 @@ export async function renderVentas(contenedor) {
     const tcInicial  = (comprobantesPorCot[cotId] || [])[0]?.tc || cot.tc_cobro || 1150
     const pctInicial = (comprobantesPorCot[cotId] || [])[0]?.pct_impuesto ?? 21
     const descInicial = (comprobantesPorCot[cotId] || [])[0]?.descuento_pct ?? 0
+    const baseInicial = (comprobantesPorCot[cotId] || [])[0]?.base_descuento
+      || (cli.condicion_iva === 'Consumidor Final' ? 'final' : 'neto')
+
+    const netoObjetivoInicial = baseInicial === 'final'
+      ? (total * (1 - descInicial / 100)) / (1 + pctInicial / 100)
+      : total * (1 - descInicial / 100)
 
     let filasForm = (comprobantesPorCot[cotId] || []).length
       ? comprobantesPorCot[cotId].map(c => ({ monto: c.monto_usd, concepto: c.concepto || '' }))
-      : repartir(total * (1 - descInicial / 100), 1, nro)
+      : repartir(netoObjetivoInicial, 1, nro)
 
     const modal = document.createElement('div')
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
@@ -115,7 +121,7 @@ export async function renderVentas(contenedor) {
           <div>
             <p class="text-xs text-gray-400">Pedido de facturación</p>
             <h3 class="text-xl font-black text-gray-900">${nro} — ${cli.nombre || ''}</h3>
-            <p class="text-sm text-gray-500">Total venta (neto): U$S ${total.toFixed(2)}</p>
+            <p id="total-venta-lbl" class="text-sm text-gray-500">${baseInicial === 'final' ? 'Total venta (precio final, con impuesto)' : 'Total venta (neto)'}: U$S ${total.toFixed(2)}</p>
           </div>
           <div class="flex items-center gap-2">
             <button onclick="irACobranza('${cotId}')"
@@ -133,14 +139,23 @@ export async function renderVentas(contenedor) {
           ` : `<p class="text-orange-600">⚠️ Este cliente no tiene datos fiscales cargados. Se genera igual (son comprobantes internos), pero podés completarlos en Clientes.</p>`}
         </div>
 
+        <div class="bg-gray-50 rounded-lg p-3 mb-4">
+          <div class="flex items-center gap-3 mb-2">
+            <label class="text-xs text-gray-500">Descuento %</label>
+            <input id="desc-comprobantes" type="text" inputmode="decimal" value="${descInicial}"
+              class="w-16 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+            <label class="text-xs text-gray-500 ml-2">se aplica sobre:</label>
+            <select id="base-desc-comprobantes" class="rounded border-gray-300 text-xs" onchange="actualizarTC()">
+              <option value="neto" ${baseInicial === 'neto' ? 'selected' : ''}>Neto (empresa, factura real)</option>
+              <option value="final" ${baseInicial === 'final' ? 'selected' : ''}>Precio final con impuesto (consumidor final, efectivo sin factura)</option>
+            </select>
+          </div>
+          <p id="desc-info" class="text-xs text-gray-500"></p>
+        </div>
+
         <div class="flex items-center justify-between mb-4">
           <p class="text-xs font-semibold text-gray-600">Dividir en:</p>
           <div class="flex items-center gap-4">
-            <div>
-              <label class="text-xs text-gray-500 mr-2">Descuento %</label>
-              <input id="desc-comprobantes" type="text" inputmode="decimal" value="${descInicial}"
-                class="w-16 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
-            </div>
             <div>
               <label class="text-xs text-gray-500 mr-2">% Impuesto</label>
               <input id="pct-comprobantes" type="text" inputmode="decimal" value="${pctInicial}"
@@ -195,11 +210,25 @@ export async function renderVentas(contenedor) {
     const getTC   = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
     const getPct  = () => parseMonto(document.getElementById('pct-comprobantes')?.value)
     const getDesc = () => parseMonto(document.getElementById('desc-comprobantes')?.value)
+    const getBaseDesc = () => document.getElementById('base-desc-comprobantes')?.value || 'neto'
     const getFactor = () => 1 + (getPct() || 0) / 100
-    const getTotalConDescuento = () => total * (1 - (getDesc() || 0) / 100)
+
+    // Neto "objetivo" a repartir en los comprobantes, segun sobre que base se aplica el descuento.
+    // Modo "neto": `total` es precio sin impuesto -> el cliente paga total*factor.
+    // Modo "final": `total` YA es el precio final que se le mostro al consumidor final (con impuesto
+    // incluido, vía "PDF con IVA") -> no hay que volver a multiplicar por el factor. Convertimos el
+    // resultado a un "neto equivalente" solo para que la tabla de comprobantes lo pueda mostrar
+    // desglosado, pero lo que efectivamente cobra es total*(1-desc/100), sin agregarle impuesto de nuevo.
+    const getNetoObjetivo = () => {
+      const factor = getFactor(), desc = getDesc() || 0
+      if (getBaseDesc() === 'final') {
+        return (total * (1 - desc / 100)) / factor
+      }
+      return total * (1 - desc / 100)
+    }
 
     function actualizarResumen() {
-      const tc = getTC(), factor = getFactor(), totalDesc = getTotalConDescuento()
+      const tc = getTC(), factor = getFactor(), netoObjetivo = getNetoObjetivo()
       const suma = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
       document.getElementById('tot-neto-usd').textContent = `U$S ${suma.toFixed(2)}`
       document.getElementById('tot-neto-ars').textContent = `$ ${Math.round(suma * tc).toLocaleString('es-AR')}`
@@ -208,9 +237,25 @@ export async function renderVentas(contenedor) {
       document.getElementById('lbl-iva-usd').textContent = `C/IMP. (${getPct()}%) U$S`
       document.getElementById('lbl-iva-ars').textContent = `C/IMP. (${getPct()}%) $`
 
+      const desc = getDesc() || 0
+      const info = document.getElementById('desc-info')
+      if (getBaseDesc() === 'final') {
+        const precioFinalConDesc = total * (1 - desc / 100)
+        info.textContent = desc > 0
+          ? `"${total.toFixed(2)}" ya es el precio final (con impuesto) que se le mostró al cliente. Con ${desc}% off por efectivo/sin factura, se le cobra U$S ${precioFinalConDesc.toFixed(2)} — no se le vuelve a sumar impuesto.`
+          : `"${total.toFixed(2)}" ya es el precio final (con impuesto) que se le mostró al cliente — no se le vuelve a sumar impuesto.`
+      } else if (desc > 0) {
+        info.textContent = `Descuento del ${desc}% aplicado sobre el neto de U$S ${total.toFixed(2)}; el cliente paga neto×(1-${desc}%)×${factor.toFixed(2)} con factura.`
+      } else {
+        info.textContent = ''
+      }
+
+      document.getElementById('total-venta-lbl').textContent =
+        (getBaseDesc() === 'final' ? 'Total venta (precio final, con impuesto)' : 'Total venta (neto)') + `: U$S ${total.toFixed(2)}`
+
       const msg = document.getElementById('suma-msg')
-      const dif = totalDesc - suma
-      const refTxt = getDesc() > 0 ? `total con descuento (U$S ${totalDesc.toFixed(2)})` : 'total de la venta'
+      const dif = netoObjetivo - suma
+      const refTxt = desc > 0 ? `total ajustado por descuento (equivale a U$S ${netoObjetivo.toFixed(2)} neto)` : 'total de la venta'
       msg.textContent = Math.abs(dif) < 0.01
         ? `✅ La suma (neto) coincide con el ${refTxt}.`
         : `⚠️ La suma neto (U$S ${suma.toFixed(2)}) difiere del ${refTxt} en U$S ${dif.toFixed(2)}.`
@@ -259,7 +304,7 @@ export async function renderVentas(contenedor) {
     renderForm()
 
     window.dividirComprobantes = (n) => {
-      filasForm = repartir(getTotalConDescuento(), n, nro)
+      filasForm = repartir(getNetoObjetivo(), n, nro)
       renderForm()
     }
     window.editComprobante = (i, campo, valor) => {
@@ -283,6 +328,7 @@ export async function renderVentas(contenedor) {
       const tc = getTC()
       const pct = getPct()
       const desc = getDesc()
+      const baseDesc = getBaseDesc()
       await supabase.from('comprobantes_venta').delete().eq('cotizacion_id', cId)
       const { error } = await supabase.from('comprobantes_venta').insert(
         filasValidas.map((f, i) => ({
@@ -293,6 +339,7 @@ export async function renderVentas(contenedor) {
           tc,
           pct_impuesto: pct,
           descuento_pct: desc,
+          base_descuento: baseDesc,
         }))
       )
       if (error) { alert('Error: ' + error.message); return }
