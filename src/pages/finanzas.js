@@ -443,6 +443,13 @@ window.borrarCobroFicha = async (id, cotId) => {
         abrirFichaVenta(cotId)
       }
     }
+
+    // Si venimos de "Ir a cobranza" en Ventas, abrir directo la ficha de esa venta
+    const abrirId = sessionStorage.getItem('abrir_ficha_venta')
+    if (abrirId) {
+      sessionStorage.removeItem('abrir_ficha_venta')
+      abrirFichaVenta(abrirId)
+    }
   }
 
   async function renderCobros() {

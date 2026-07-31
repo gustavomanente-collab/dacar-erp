@@ -101,10 +101,11 @@ export async function renderVentas(contenedor) {
     const total = cot.total_bruto_usd || cot.total_final || 0
     const tcInicial  = (comprobantesPorCot[cotId] || [])[0]?.tc || cot.tc_cobro || 1150
     const pctInicial = (comprobantesPorCot[cotId] || [])[0]?.pct_impuesto ?? 21
+    const descInicial = (comprobantesPorCot[cotId] || [])[0]?.descuento_pct ?? 0
 
     let filasForm = (comprobantesPorCot[cotId] || []).length
       ? comprobantesPorCot[cotId].map(c => ({ monto: c.monto_usd, concepto: c.concepto || '' }))
-      : repartir(total, 1, nro)
+      : repartir(total * (1 - descInicial / 100), 1, nro)
 
     const modal = document.createElement('div')
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;'
@@ -116,7 +117,13 @@ export async function renderVentas(contenedor) {
             <h3 class="text-xl font-black text-gray-900">${nro} — ${cli.nombre || ''}</h3>
             <p class="text-sm text-gray-500">Total venta (neto): U$S ${total.toFixed(2)}</p>
           </div>
-          <button onclick="this.closest('[style]').remove()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          <div class="flex items-center gap-2">
+            <button onclick="irACobranza('${cotId}')"
+              class="text-xs bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-medium">
+              💰 Ir a cobranza de esta venta
+            </button>
+            <button onclick="this.closest('[style]').remove()" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
+          </div>
         </div>
 
         <div class="bg-gray-50 rounded-lg p-3 mb-4 text-sm">
@@ -129,6 +136,11 @@ export async function renderVentas(contenedor) {
         <div class="flex items-center justify-between mb-4">
           <p class="text-xs font-semibold text-gray-600">Dividir en:</p>
           <div class="flex items-center gap-4">
+            <div>
+              <label class="text-xs text-gray-500 mr-2">Descuento %</label>
+              <input id="desc-comprobantes" type="text" inputmode="decimal" value="${descInicial}"
+                class="w-16 rounded border-gray-300 text-sm text-right" oninput="actualizarTC()" />
+            </div>
             <div>
               <label class="text-xs text-gray-500 mr-2">% Impuesto</label>
               <input id="pct-comprobantes" type="text" inputmode="decimal" value="${pctInicial}"
@@ -180,12 +192,14 @@ export async function renderVentas(contenedor) {
     document.body.appendChild(modal)
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove() })
 
-    const getTC  = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
-    const getPct = () => parseMonto(document.getElementById('pct-comprobantes')?.value)
+    const getTC   = () => parseMonto(document.getElementById('tc-comprobantes')?.value) || 1
+    const getPct  = () => parseMonto(document.getElementById('pct-comprobantes')?.value)
+    const getDesc = () => parseMonto(document.getElementById('desc-comprobantes')?.value)
     const getFactor = () => 1 + (getPct() || 0) / 100
+    const getTotalConDescuento = () => total * (1 - (getDesc() || 0) / 100)
 
     function actualizarResumen() {
-      const tc = getTC(), factor = getFactor()
+      const tc = getTC(), factor = getFactor(), totalDesc = getTotalConDescuento()
       const suma = filasForm.reduce((s, f) => s + (parseMonto(f.monto) || 0), 0)
       document.getElementById('tot-neto-usd').textContent = `U$S ${suma.toFixed(2)}`
       document.getElementById('tot-neto-ars').textContent = `$ ${Math.round(suma * tc).toLocaleString('es-AR')}`
@@ -195,10 +209,11 @@ export async function renderVentas(contenedor) {
       document.getElementById('lbl-iva-ars').textContent = `C/IMP. (${getPct()}%) $`
 
       const msg = document.getElementById('suma-msg')
-      const dif = total - suma
+      const dif = totalDesc - suma
+      const refTxt = getDesc() > 0 ? `total con descuento (U$S ${totalDesc.toFixed(2)})` : 'total de la venta'
       msg.textContent = Math.abs(dif) < 0.01
-        ? '✅ La suma (neto) coincide con el total de la venta.'
-        : `⚠️ La suma neto (U$S ${suma.toFixed(2)}) difiere del total en U$S ${dif.toFixed(2)}.`
+        ? `✅ La suma (neto) coincide con el ${refTxt}.`
+        : `⚠️ La suma neto (U$S ${suma.toFixed(2)}) difiere del ${refTxt} en U$S ${dif.toFixed(2)}.`
       msg.className = 'text-xs mb-4 ' + (Math.abs(dif) < 0.01 ? 'text-green-600' : 'text-orange-600')
     }
 
@@ -244,7 +259,7 @@ export async function renderVentas(contenedor) {
     renderForm()
 
     window.dividirComprobantes = (n) => {
-      filasForm = repartir(total, n, nro)
+      filasForm = repartir(getTotalConDescuento(), n, nro)
       renderForm()
     }
     window.editComprobante = (i, campo, valor) => {
@@ -267,6 +282,7 @@ export async function renderVentas(contenedor) {
 
       const tc = getTC()
       const pct = getPct()
+      const desc = getDesc()
       await supabase.from('comprobantes_venta').delete().eq('cotizacion_id', cId)
       const { error } = await supabase.from('comprobantes_venta').insert(
         filasValidas.map((f, i) => ({
@@ -276,6 +292,7 @@ export async function renderVentas(contenedor) {
           concepto: f.concepto || `Comprobante ${i + 1} de ${filasValidas.length} — Ppto ${nro}`,
           tc,
           pct_impuesto: pct,
+          descuento_pct: desc,
         }))
       )
       if (error) { alert('Error: ' + error.message); return }
@@ -290,6 +307,11 @@ export async function renderVentas(contenedor) {
       const tc = comps[0]?.tc || getTC()
       const pct = comps[0]?.pct_impuesto ?? getPct()
       generarPDFComprobantes(cot, cli, comps, tc, pct)
+    }
+
+    window.irACobranza = (cId) => {
+      sessionStorage.setItem('abrir_ficha_venta', cId)
+      window.navigate('finanzas')
     }
   }
 }
