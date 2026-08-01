@@ -152,7 +152,8 @@ chapas: extra.chapas || null,
 largo: extra.largo || null,
 costo_unit: extra.costo_unit || 0,
 dto: extra.dto || 0,
-opcional: esOpcional
+opcional: esOpcional,
+notas: extra.aclaracion || ''
 }
 }
 
@@ -164,7 +165,8 @@ descripcion: descLimpia,
 cant: parseFloat(it.cantidad) || 1,
 costo_unit: extra.costo_unit || 0,
 dto: extra.dto || 0,
-opcional: esOpcional
+opcional: esOpcional,
+notas: extra.aclaracion || ''
 }
 }
 
@@ -175,7 +177,8 @@ descripcion: descLimpia,
 cant: parseFloat(it.cantidad) || 1,
 costo_unit: extra.costo_unit || 0,
 dto: extra.dto || 0,
-opcional: esOpcional
+opcional: esOpcional,
+notas: extra.aclaracion || ''
 }
 })
 }
@@ -305,7 +308,7 @@ contenedor.innerHTML = `
        class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg">
        ⚡ Auto accesorios
      </button>
-     <button onclick="agregarFlete()"
+     <button onclick="abrirModalFlete()"
        class="bg-red-600 hover:bg-red-800 text-white text-sm font-medium px-4 py-2 rounded-lg">
        🚛 Flete
      </button>
@@ -564,10 +567,43 @@ contenedor.innerHTML = `
    class="w-full rounded-lg border-gray-300 text-sm" />
 </div>
      </div>
+       <div>
+         <label class="block text-xs text-gray-500 mb-1">Aclaración (opcional)</label>
+         <textarea id="ma-notas" rows="2" placeholder="Alguna aclaración sobre este ítem..."
+           class="w-full rounded-lg border-gray-300 text-sm"></textarea>
+       </div>
      </div>
      <div class="flex gap-3 mt-5">
        <button onclick="cerrarModales()" class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
        <button onclick="confirmarAcc()" class="flex-1 bg-gray-700 text-white py-2 rounded-lg text-sm font-bold">Agregar</button>
+     </div>
+   </div>
+ </div>
+
+ <!-- MODAL FLETE -->
+ <div id="modal-flete" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+   <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4">
+     <h3 class="font-bold text-gray-900 mb-4">Flete</h3>
+     <div class="space-y-3">
+       <div>
+         <label class="block text-xs text-gray-500 mb-1">Descripción</label>
+         <input id="mf-desc" type="text" placeholder="Ej: Flete a obra"
+           class="w-full rounded-lg border-gray-300 text-sm" />
+       </div>
+       <div>
+         <label class="block text-xs text-gray-500 mb-1">Costo U$S (precio de lista)</label>
+         <input id="mf-costo" type="number" min="0" step="0.01" placeholder="0.00"
+           class="w-full rounded-lg border-gray-300 text-sm" />
+       </div>
+       <div>
+         <label class="block text-xs text-gray-500 mb-1">Aclaración (opcional)</label>
+         <textarea id="mf-notas" rows="2" placeholder="Alguna aclaración sobre el flete..."
+           class="w-full rounded-lg border-gray-300 text-sm"></textarea>
+       </div>
+     </div>
+     <div class="flex gap-3 mt-5">
+       <button onclick="cerrarModales()" class="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm">Cancelar</button>
+       <button onclick="confirmarFlete()" class="flex-1 bg-gray-700 text-white py-2 rounded-lg text-sm font-bold">Guardar</button>
      </div>
    </div>
  </div>
@@ -664,11 +700,12 @@ document.getElementById('ma-sel').value = ''
 document.getElementById('ma-desc').value = ''
 document.getElementById('ma-costo').value = ''
 document.getElementById('ma-cant').value = ''
+document.getElementById('ma-notas').value = ''
 document.getElementById('modal-acc').classList.remove('hidden')
 }
 window.cerrarModales = () => {
 window._editandoIndex = null
-;['modal-panel','modal-m2','modal-acc'].forEach(id =>
+;['modal-panel','modal-m2','modal-acc','modal-flete'].forEach(id =>
 document.getElementById(id).classList.add('hidden'))
 }
 
@@ -914,21 +951,64 @@ document.getElementById('ma-costo').value = ''
 }
 }
 window.confirmarAcc = () => {
-const sel  = document.getElementById('ma-sel').value
-const cant = parseFloat(document.getElementById('ma-cant').value) || 0
-const cost = parseFloat(document.getElementById('ma-costo').value) || 0
-const desc = sel === 'LIBRE' ? document.getElementById('ma-desc').value.trim() : sel
+const sel   = document.getElementById('ma-sel').value
+const cant  = parseFloat(document.getElementById('ma-cant').value) || 0
+const cost  = parseFloat(document.getElementById('ma-costo').value) || 0
+const desc  = sel === 'LIBRE' ? document.getElementById('ma-desc').value.trim() : sel
+const notas = document.getElementById('ma-notas').value.trim()
 if (!desc || !cant) { alert('Completá accesorio y cantidad'); return }
-items.push({ tipo: 'accesorio', descripcion: desc, cant, costo_unit: cost, dto: 0, opcional: false })
+const nuevoItem = { tipo: 'accesorio', descripcion: desc, cant, costo_unit: cost, dto: 0, opcional: false, notas }
+
+if (window._editandoIndex !== undefined && window._editandoIndex !== null) {
+items[window._editandoIndex] = nuevoItem
+window._editandoIndex = null
+} else {
+items.push(nuevoItem)
+}
 cerrarModales(); renderItems(); recalcular()
+}
+window.editarAccesorio = (i) => {
+const it = items[i]
+if (!it || it.tipo !== 'accesorio') return
+document.getElementById('ma-sel').value = accesoriosPreset[it.descripcion] !== undefined ? it.descripcion : 'LIBRE'
+window.maSelChange()
+document.getElementById('ma-desc').value = accesoriosPreset[it.descripcion] !== undefined ? '' : it.descripcion
+document.getElementById('ma-cant').value = it.cant
+document.getElementById('ma-costo').value = it.costo_unit
+document.getElementById('ma-notas').value = it.notas || ''
+document.getElementById('modal-acc').classList.remove('hidden')
+window._editandoIndex = i
 }
 
 // Flete
-window.agregarFlete = () => {
-const desc  = prompt('Descripción del flete:', 'Flete a obra') || 'Flete a obra'
-const costo = parseFloat(prompt('Costo del flete en U$S (precio de lista):') || '0') || 0
-items.push({ tipo: 'flete', descripcion: desc, cant: 1, costo_unit: costo, dto: 0, opcional: false })
-renderItems(); recalcular()
+window.abrirModalFlete = () => {
+document.getElementById('mf-desc').value = ''
+document.getElementById('mf-costo').value = ''
+document.getElementById('mf-notas').value = ''
+document.getElementById('modal-flete').classList.remove('hidden')
+}
+window.editarFlete = (i) => {
+const it = items[i]
+if (!it || it.tipo !== 'flete') return
+document.getElementById('mf-desc').value = it.descripcion
+document.getElementById('mf-costo').value = it.costo_unit
+document.getElementById('mf-notas').value = it.notas || ''
+document.getElementById('modal-flete').classList.remove('hidden')
+window._editandoIndex = i
+}
+window.confirmarFlete = () => {
+const desc  = document.getElementById('mf-desc').value.trim() || 'Flete a obra'
+const costo = parseFloat(document.getElementById('mf-costo').value) || 0
+const notas = document.getElementById('mf-notas').value.trim()
+const nuevoItem = { tipo: 'flete', descripcion: desc, cant: 1, costo_unit: costo, dto: 0, opcional: false, notas }
+
+if (window._editandoIndex !== undefined && window._editandoIndex !== null) {
+items[window._editandoIndex] = nuevoItem
+window._editandoIndex = null
+} else {
+items.push(nuevoItem)
+}
+cerrarModales(); renderItems(); recalcular()
 }
 
 // Auto accesorios
@@ -1007,6 +1087,7 @@ return `<tr class="${it.opcional ? 'bg-yellow-50' : i % 2 === 0 ? 'bg-white' : '
          ${it.opcional ? '<span class="text-yellow-600 font-bold text-xs">[OPC] </span>' : ''}
          <strong>${it.tipo === 'panel' ? it.descripcion.split('|')[0] : it.descripcion}</strong>
          ${it.tipo === 'panel' ? `<br><span class="text-gray-400">${it.descripcion.split('|').slice(1).join('|')}</span>` : ''}
+         ${it.notas ? `<br><span class="text-gray-400 italic">📝 ${it.notas}</span>` : ''}
        </td>
        <td class="px-1 py-2 text-center">
          <input type="number" value="${cant === '-' ? '' : cant}" min="0" step="0.01" placeholder="-"
@@ -1034,6 +1115,8 @@ return `<tr class="${it.opcional ? 'bg-yellow-50' : i % 2 === 0 ? 'bg-white' : '
        </td>
        <td class="px-1 py-2 text-center" style="white-space:nowrap">
          ${it.tipo === 'panel' ? `<button onclick="editarPanel(${i})" class="text-blue-500 hover:text-blue-700 font-bold text-xs mr-1">✏️</button>` : ''}
+         ${it.tipo === 'accesorio' ? `<button onclick="editarAccesorio(${i})" class="text-blue-500 hover:text-blue-700 font-bold text-xs mr-1">✏️</button>` : ''}
+         ${it.tipo === 'flete' ? `<button onclick="editarFlete(${i})" class="text-blue-500 hover:text-blue-700 font-bold text-xs mr-1">✏️</button>` : ''}
          <button onclick="elimItem(${i})" class="text-red-400 hover:text-red-600 font-bold text-sm">✕</button>
        </td>
      </tr>`
@@ -1169,7 +1252,7 @@ document.getElementById('btn-alternativa').addEventListener('click', () => {
         tipo: it.tipo, modelo: it.modelo || null, espesor: it.espesor || null,
         term: it.term || null, color: it.color || null, m2: it.m2 || null,
         chapas: it.chapas || null, largo: it.largo || null,
-        costo_unit: it.costo_unit, dto: it.dto || 0
+        costo_unit: it.costo_unit, dto: it.dto || 0, aclaracion: it.notas || null
       })
     })),
     margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
@@ -1225,6 +1308,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
         largo: it.largo || null,
         costo_unit: it.costo_unit,
         dto: it.dto || 0,
+        aclaracion: it.notas || null,
       })
     }))
   )
