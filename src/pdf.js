@@ -137,7 +137,7 @@ export function generarPDFComprobantes(cot, cliente, comprobantes, tc = 1150) {
   doc.line(10, 20, pw - 10, 20)
 
   doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
-  doc.text(`Ppto de referencia: ${nro}`, 10, 28)
+  doc.text(`Ppto de referencia: ${nro}${cot.comessa ? `  ·  COMESSA: ${cot.comessa}` : ''}`, 10, 28)
   doc.text(`Fecha: ${new Date().toLocaleDateString('es-AR')}  ·  T/C: $ ${tc}  ·  ${tipoVentaTxt}`, pw - 10, 28, { align: 'right' })
 
   doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)

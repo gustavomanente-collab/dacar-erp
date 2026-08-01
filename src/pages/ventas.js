@@ -53,7 +53,7 @@ export async function renderVentas(contenedor) {
           <div>
             <p class="font-bold text-gray-900 text-sm">${nro}</p>
             <p class="text-sm text-gray-700">${cot.clientes?.nombre || ''}</p>
-            <p class="text-xs text-gray-400">${cot.clientes?.obra || ''} ${cot.tipo_venta === 'consumidor_final' ? '· Consumidor Final' : ''}</p>
+            <p class="text-xs text-gray-400">${cot.clientes?.obra || ''} ${cot.tipo_venta === 'consumidor_final' ? '· Consumidor Final' : ''} ${cot.comessa ? `· COMESSA ${cot.comessa}` : ''}</p>
           </div>
           <div class="text-right">
             <p class="font-bold text-green-700 text-sm">U$S ${total.toFixed(2)}</p>
@@ -72,7 +72,8 @@ export async function renderVentas(contenedor) {
       [],
       [
         { v: 'N° Ppto', s: ESTILOS.header }, { v: 'Cliente', s: ESTILOS.header },
-        { v: 'CUIT', s: ESTILOS.header }, { v: 'Total U$S', s: ESTILOS.header },
+        { v: 'CUIT', s: ESTILOS.header }, { v: 'COMESSA', s: ESTILOS.header },
+        { v: 'Total U$S', s: ESTILOS.header },
         { v: 'Comprobantes', s: ESTILOS.header }, { v: 'Estado', s: ESTILOS.header },
       ]
     ]
@@ -83,6 +84,7 @@ export async function renderVentas(contenedor) {
         { v: `2026-${String(cot.numero).padStart(3,'0')}`, s: { ...filaAlt(i), font: { bold: true } } },
         { v: cot.clientes?.nombre || '', s: filaAlt(i) },
         { v: cot.clientes?.cuit || '', s: filaAlt(i) },
+        { v: cot.comessa || '', s: filaAlt(i) },
         { v: total, t: 'n', s: { ...filaAlt(i), ...ESTILOS.money } },
         { v: comps.length, t: 'n', s: { ...filaAlt(i), ...ESTILOS.center } },
         { v: comps.length ? 'Generado' : 'Sin generar', s: filaAlt(i) },
@@ -91,7 +93,7 @@ export async function renderVentas(contenedor) {
     descargarExcel(filas, {
       nombreHoja: 'Ventas',
       nombreArchivo: `DACAR_ventas_facturacion_${fechaArchivo()}.xlsx`,
-      colWidths: [12, 26, 16, 14, 14, 14]
+      colWidths: [12, 26, 16, 14, 14, 14, 14]
     })
   })
 
@@ -137,6 +139,13 @@ export async function renderVentas(contenedor) {
             <p><strong>Razón social:</strong> ${cli.razon_social || cli.nombre || ''}</p>
             <p><strong>CUIT:</strong> ${cli.cuit || '—'} · <strong>Condición IVA:</strong> ${cli.condicion_iva || '—'}</p>
           ` : `<p class="text-orange-600">⚠️ Este cliente no tiene datos fiscales cargados. Se genera igual (son comprobantes internos), pero podés completarlos en Clientes.</p>`}
+        </div>
+
+        <div class="flex items-center gap-2 mb-4">
+          <label class="text-xs font-semibold text-gray-600">COMESSA</label>
+          <input id="comessa-venta" type="text" value="${cot.comessa || ''}" placeholder="N° interno para relacionar con la compra"
+            class="w-56 rounded border-gray-300 text-sm" onchange="guardarComessa('${cotId}')" />
+          <span id="comessa-msg" class="text-xs text-green-600 hidden">✅ Guardado</span>
         </div>
 
         <div id="banner-desactualizado" class="${desactualizado ? '' : 'hidden'} bg-red-50 border-2 border-red-300 rounded-lg p-3 mb-4">
@@ -277,6 +286,16 @@ export async function renderVentas(contenedor) {
     window.irACobranza = (cId) => {
       sessionStorage.setItem('abrir_ficha_venta', cId)
       window.navigate('finanzas')
+    }
+
+    window.guardarComessa = async (cId) => {
+      const valor = document.getElementById('comessa-venta').value.trim() || null
+      const { error } = await supabase.from('cotizaciones').update({ comessa: valor }).eq('id', cId)
+      if (error) { alert('Error: ' + error.message); return }
+      cot.comessa = valor
+      const msg = document.getElementById('comessa-msg')
+      msg.classList.remove('hidden')
+      setTimeout(() => msg.classList.add('hidden'), 2000)
     }
   }
 }
