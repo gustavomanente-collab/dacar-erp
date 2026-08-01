@@ -74,12 +74,15 @@ export async function renderDashboard(contenedor) {
   const comisionesPend = (comisiones || [])
     .filter(c => !c.liquidado && c.cotizaciones)
     .reduce((s, c) => {
-      const totalBase = c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0
+      // Utilidad siempre sobre venta neta: total_bruto_usd puede incluir IVA, que no es ganancia.
+      const totalFinal = c.cotizaciones?.total_final || 0
+      const totalCobrable = c.cotizaciones?.total_bruto_usd || totalFinal
       const totalNeto = c.cotizaciones?.total_neto || 0
       const pctComision = c.cotizaciones?.pct_comision_override || 25
-      const util = totalBase - totalNeto
-      const pct  = totalBase > 0 ? util / totalBase : 0
-      const montoBase = Math.min(c.monto_usd || 0, totalBase)
+      const util = totalFinal - totalNeto
+      const pct  = totalFinal > 0 ? util / totalFinal : 0
+      const ratioNeto = totalCobrable > 0 ? totalFinal / totalCobrable : 1
+      const montoBase = Math.min((c.monto_usd || 0) * ratioNeto, totalFinal)
       return s + montoBase * pct * (pctComision / 100)
     }, 0)
 

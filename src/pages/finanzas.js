@@ -1664,7 +1664,9 @@ async function renderCalce() {
       .in('cotizacion_id', cots.map(c => c.id))
 
     const porCot = cots.map(c => {
-      const venta        = c.total_bruto_usd || c.total_final || 0
+      // Venta NETA siempre (nunca total_bruto_usd: si la venta esta facturada con IVA,
+      // ese 21% extra no es utilidad, hay que girarlo a AFIP -- usarlo aca infla la comision).
+      const venta        = c.total_final || 0
       const costo        = c.total_neto || 0
       const utilidad     = venta - costo
       const margen       = venta > 0 ? utilidad / venta * 100 : 0
@@ -1953,12 +1955,17 @@ async function renderCalce() {
 
     const comisionesCalc = cobrosConCot.map(c => {
       const totalNeto  = c.cotizaciones.total_neto || 0
-      // Misma base que el resto de la app: total_bruto_usd (con IVA si esta facturada), si no total_final
-      const totalBase  = c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0
+      // Utilidad SIEMPRE sobre venta neta (total_final): si esta facturada con IVA,
+      // total_bruto_usd incluye ese 21% que no es ganancia y no debe entrar en la comision.
+      const totalFinal = c.cotizaciones?.total_final || 0
+      // Lo efectivamente cobrado puede incluir IVA (total_bruto_usd > total_final si esta
+      // facturada) -- lo "desinflamos" a su equivalente neto antes de aplicarle el margen.
+      const totalCobrable = c.cotizaciones?.total_bruto_usd || totalFinal
       const pctComision = c.cotizaciones?.pct_comision_override || 25
-      const utilidad   = totalBase - totalNeto
-      const pctUtil    = totalBase > 0 ? utilidad / totalBase : 0
-      const montoBase  = Math.min(c.monto_usd, totalBase)
+      const utilidad   = totalFinal - totalNeto
+      const pctUtil    = totalFinal > 0 ? utilidad / totalFinal : 0
+      const ratioNeto  = totalCobrable > 0 ? totalFinal / totalCobrable : 1
+      const montoBase  = Math.min((c.monto_usd || 0) * ratioNeto, totalFinal)
       const utilidadDelCobro = montoBase * pctUtil
       const comision   = utilidadDelCobro * pctComision / 100
       return { ...c, pctComision, utilidadDelCobro, comision }
@@ -2033,7 +2040,7 @@ async function renderCalce() {
                   <td class="px-3 py-2 text-right font-bold text-purple-700">U$S ${c.comision.toFixed(2)}</td>
 <td class="px-3 py-2 text-right text-purple-600">$ ${Math.round(c.comision*(c.tc||1150)).toLocaleString('es-AR')}</td>
                   <td class="px-3 py-2 text-center">
-                    <button onclick="liquidarVentaDesdeComisiones('${c.cotizacion_id}', ${c.cotizaciones?.total_bruto_usd || c.cotizaciones?.total_final || 0}, ${c.cotizaciones?.total_neto || 0}, '${c.cotizaciones?.numero || 0}', ${c.pctComision})"
+                    <button onclick="liquidarVentaDesdeComisiones('${c.cotizacion_id}', ${c.cotizaciones?.total_final || 0}, ${c.cotizaciones?.total_neto || 0}, '${c.cotizaciones?.numero || 0}', ${c.pctComision})"
                       class="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded font-medium">
                       💸 100%
                     </button>
