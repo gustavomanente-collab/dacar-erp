@@ -1899,6 +1899,7 @@ async function renderCalce() {
           { v: 'Venta', s: ESTILOS.header }, { v: 'Costo', s: ESTILOS.header },
           { v: 'Utilidad bruta', s: ESTILOS.header }, { v: '% Com.', s: ESTILOS.header },
           { v: 'Comisión', s: ESTILOS.header }, { v: 'Utilidad neta', s: ESTILOS.header },
+          { v: 'T/C', s: ESTILOS.header }, { v: 'Utilidad neta $', s: ESTILOS.header },
           { v: 'Margen neto %', s: ESTILOS.header },
         ]
       ]
@@ -1915,6 +1916,8 @@ async function renderCalce() {
           { v: c.pctComision, t: 'n', s: { ...est, ...ESTILOS.center } },
           { f: `E${row}*F${row}/100`, t: 'n', s: { ...est, ...ESTILOS.moneyRed } },
           { f: `E${row}-G${row}`, t: 'n', s: { ...est, font: { bold: true }, numFmt: '"U$S "#,##0.00' } },
+          { v: c.tc_cobro || 1150, t: 'n', s: { ...est, ...ESTILOS.center } },
+          { f: `H${row}*I${row}`, t: 'n', s: { ...est, ...ESTILOS.moneyAR } },
           { f: `IF(C${row}=0,0,H${row}/C${row}*100)`, t: 'n', s: { ...est, ...ESTILOS.pct } },
         ])
       })
@@ -1925,13 +1928,14 @@ async function renderCalce() {
         { f: `SUM(D${filaIni}:D${filaFin})`, t: 'n', s: ESTILOS.moneyB },
         { f: `SUM(E${filaIni}:E${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
         { f: `SUM(G${filaIni}:G${filaFin})`, t: 'n', s: ESTILOS.moneyB },
-        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB },
+        { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
+        { f: `SUM(J${filaIni}:J${filaFin})`, t: 'n', s: { font: { bold: true }, ...ESTILOS.moneyAR } },
         { f: `IF(C${filaFin+1}=0,0,H${filaFin+1}/C${filaFin+1}*100)`, t: 'n', s: { font: { bold: true }, ...ESTILOS.pct } },
       ])
       descargarExcel(filas, {
         nombreHoja: 'Rentabilidad',
         nombreArchivo: `DACAR_rentabilidad_${fechaArchivo()}.xlsx`,
-        colWidths: [12, 24, 14, 14, 14, 8, 14, 14, 12]
+        colWidths: [12, 24, 14, 14, 14, 8, 14, 14, 10, 16, 12]
       })
     }
   }
