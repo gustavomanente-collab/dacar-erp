@@ -378,10 +378,15 @@ contenedor.innerHTML = `
 
    <!-- CONDICIONES -->
    <div class="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
        <div>
          <label class="block text-xs text-gray-400 mb-1">Condición de pago</label>
          <input id="cond-pago" type="text" value="50% Anticipo - 50% contra entrega"
+           class="w-full rounded-lg border-gray-200 text-sm" />
+       </div>
+       <div>
+         <label class="block text-xs text-gray-400 mb-1">Lugar de entrega</label>
+         <input id="cond-entrega" type="text" value="Sobre camión en fábrica"
            class="w-full rounded-lg border-gray-200 text-sm" />
        </div>
        <div>
@@ -1342,6 +1347,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
     descuento_pct: descG,
     validez: parseInt(document.getElementById('cond-validez').value) || 5,
     condpago: document.getElementById('cond-pago').value,
+    entrega: document.getElementById('cond-entrega').value,
   }
 
   const btnPdf = document.getElementById('btn-pdf')

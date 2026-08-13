@@ -103,7 +103,7 @@ export async function generarPDF(cot, empresa, opciones = {}) {
 
   doc.setFont('helvetica', 'normal').setTextColor(60)
   doc.text(`Pago: ${cot.condpago || '50% Anticipo - 50% contra entrega'}`, 10, cy + 8)
-  doc.text('Entrega: Sobre camión en fábrica', pw / 2, cy + 8)
+  doc.text(`Entrega: ${cot.entrega || 'Sobre camión en fábrica'}`, pw / 2, cy + 8)
   doc.text(`Validez: ${cot.validez || 5} días corridos`, 10, cy + 14)
   doc.text('T. Cambio: Dólar Oficial BNA', pw / 2, cy + 14)
 
