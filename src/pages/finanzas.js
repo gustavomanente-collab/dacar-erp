@@ -1,6 +1,7 @@
 import { supabase } from '../supabase.js'
 import { generarReciboCobro, generarReciboComision } from '../recibos.js'
 import { ESTILOS, filaAlt, descargarExcel, fechaArchivo } from '../excelHelpers.js'
+import { MARGEN_CAT_ESTADOS, calcularMargenPorCategoria, resumenPorEstado, margenPct } from '../margenCategoria.js'
 
 // Los input type="number" exigen punto decimal: si se escribe coma (formato
 // AR, ej. "2675,58") el valor queda invalido. Los montos del modulo de
@@ -1646,13 +1647,7 @@ async function renderCalce() {
   // Margen real por categoría (panel/accesorio/flete), comparando enviados
   // (pendientes) vs aprobados (ganados) vs rechazados (perdidos), para ver
   // si se está cotizando alto, bajo, o dónde está el punto justo.
-  const MARGEN_CAT_TIPOS = ['panel', 'accesorio', 'flete']
-  const MARGEN_CAT_ESTADOS = [
-    { key: 'enviada',   label: 'Enviados (pendientes)' },
-    { key: 'aprobada',  label: 'Aprobados (ganados)' },
-    { key: 'rechazada', label: 'Rechazados (perdidos)' },
-  ]
-
+  // Cálculo compartido con Dashboard -> src/margenCategoria.js.
   async function montarMargenPorCategoria() {
     const cont = document.getElementById('margen-categoria-container')
     if (!cont) return
@@ -1673,54 +1668,9 @@ async function renderCalce() {
       .select('cotizacion_id, descripcion, cantidad, precio_unitario, notas')
       .in('cotizacion_id', cots.map(c => c.id))
 
-    const itemsPorCot = {}
-    ;(items || []).forEach(it => {
-      (itemsPorCot[it.cotizacion_id] ||= []).push(it)
-    })
-
-    // Margen real (venta - costo) / venta por categoría, reconstruido desde
-    // costo_unit guardado en notas (igual que en historial.js/rentabilidad).
-    const porCot = cots.map(c => {
-      const suma = { panel: { costo: 0, venta: 0 }, accesorio: { costo: 0, venta: 0 }, flete: { costo: 0, venta: 0 } }
-      ;(itemsPorCot[c.id] || []).forEach(it => {
-        if (it.descripcion?.includes('[OPCIONAL]')) return
-        let extra = {}
-        try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
-        if (!MARGEN_CAT_TIPOS.includes(extra.tipo)) return
-        const cant  = parseFloat(it.cantidad) || 0
-        const venta = cant * (parseFloat(it.precio_unitario) || 0)
-        const costo = cant * (extra.costo_unit || 0)
-        suma[extra.tipo].costo += costo
-        suma[extra.tipo].venta += venta
-      })
-      const costoTotal = MARGEN_CAT_TIPOS.reduce((s, t) => s + suma[t].costo, 0)
-      const ventaTotal = MARGEN_CAT_TIPOS.reduce((s, t) => s + suma[t].venta, 0)
-      return { ...c, suma, costoTotal, ventaTotal }
-    })
-
-    const margenPct = (costo, venta) => venta > 0 ? (venta - costo) / venta * 100 : null
+    const porCot = calcularMargenPorCategoria(cots, items)
     const fmtPct = v => v === null ? '—' : v.toFixed(1) + '%'
-
-    // Resumen ponderado por venta (no promedio simple de %, para que un ppto
-    // chico no pese lo mismo que uno grande) — por estado, y por categoría.
-    function resumenEstado(estadoKey) {
-      const del = porCot.filter(c => c.estado === estadoKey)
-      const acc = { panel: { costo: 0, venta: 0 }, accesorio: { costo: 0, venta: 0 }, flete: { costo: 0, venta: 0 }, costoTotal: 0, ventaTotal: 0 }
-      del.forEach(c => {
-        MARGEN_CAT_TIPOS.forEach(t => { acc[t].costo += c.suma[t].costo; acc[t].venta += c.suma[t].venta })
-        acc.costoTotal += c.costoTotal
-        acc.ventaTotal += c.ventaTotal
-      })
-      return {
-        cantidad: del.length,
-        ventaTotal: acc.ventaTotal,
-        panel:     margenPct(acc.panel.costo, acc.panel.venta),
-        accesorio: margenPct(acc.accesorio.costo, acc.accesorio.venta),
-        flete:     margenPct(acc.flete.costo, acc.flete.venta),
-        total:     margenPct(acc.costoTotal, acc.ventaTotal),
-      }
-    }
-    const resumenes = MARGEN_CAT_ESTADOS.map(e => ({ ...e, r: resumenEstado(e.key) }))
+    const resumenes = MARGEN_CAT_ESTADOS.map(e => ({ ...e, r: resumenPorEstado(porCot, e.key) }))
 
     function filasDetalle(filtro) {
       const lista = filtro ? porCot.filter(c => c.estado === filtro) : porCot

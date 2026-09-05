@@ -1,5 +1,304 @@
 import { supabase } from '../supabase.js'
 import { ESTILOS, filaAlt, descargarExcelMultiple, fechaArchivo } from '../excelHelpers.js'
+import { MARGEN_CAT_ESTADOS, calcularMargenPorCategoria, resumenPorEstado } from '../margenCategoria.js'
+
+// Paleta categórica validada (dataviz skill) -- solo estos 3 slots, que
+// pasan el chequeo all-pairs (scatter/grupos de barras) en ambos modos.
+const COLOR_PANEL     = '#2a78d6' // slot 1 blue
+const COLOR_ACCESORIO = '#eb6834' // slot 2 orange
+const COLOR_FLETE     = '#1baf7a' // slot 3 aqua (bajo 3:1 en superficie clara -> siempre con etiqueta directa)
+// Colores de estado (fijos, no temáticos) -- iguales a los que ya usa Historial.
+// Se reusan también como "info/positivo/negativo" en otros gráficos (ventas/cobrado).
+const COLOR_INFO      = '#2a78d6' // azul: en curso / informativo, ni bien ni mal
+const COLOR_GOOD       = '#0ca30c' // good (aprobada)
+const COLOR_CRITICAL   = '#d03b3b' // critical (rechazada)
+const INK_SECONDARY   = '#52514e'
+const INK_MUTED       = '#898781'
+const GRID_LINE       = '#e1e0d9'
+
+function fmtUsd0(v) { return `U$S ${Math.round(v).toLocaleString('es-AR')}` }
+function fmtCompact(v) {
+  if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M'
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'K'
+  return Math.round(v).toString()
+}
+function niceCeil(v) {
+  if (v <= 0) return 1
+  const pow = Math.pow(10, Math.floor(Math.log10(v)))
+  const norm = v / pow
+  const niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10
+  return niceNorm * pow
+}
+
+// ── Gráfico de línea (tendencia) con crosshair + tooltip ──────────────────
+function renderTrendChart(container, labels, series) {
+  if (!container) return
+  const W = 640, H = 200
+  const padL = 44, padR = 58, padT = 14, padB = 26
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+  const n = labels.length
+  const xStep = n > 1 ? plotW / (n - 1) : 0
+  const maxRaw = Math.max(1, ...series.flatMap(s => s.values))
+  const yMax = niceCeil(maxRaw * 1.15)
+  const x = i => padL + i * xStep
+  const y = v => padT + plotH - (v / yMax) * plotH
+
+  const yTicks = 4
+  const gridLines = Array.from({ length: yTicks + 1 }, (_, i) => {
+    const v = yMax * i / yTicks
+    const yy = y(v)
+    return `<line x1="${padL}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="${GRID_LINE}" stroke-width="1"/>
+      <text x="${padL - 8}" y="${yy + 3}" font-size="9" fill="${INK_MUTED}" text-anchor="end">${fmtCompact(v)}</text>`
+  }).join('')
+
+  // Labels de fin de línea: si dos series terminan cerca en Y, se pisan --
+  // los separamos verticalmente (spec: "cuando convergen, no los apiles
+  // encima, sepáralos" -- con solo 2 series alcanza con un empuje simple).
+  const last = labels.length - 1
+  const endYs = series.map(s => y(s.values[last]))
+  if (series.length === 2 && Math.abs(endYs[0] - endYs[1]) < 12) {
+    const mid = (endYs[0] + endYs[1]) / 2
+    endYs[0] = mid + (endYs[0] < endYs[1] ? -7 : 7)
+    endYs[1] = mid + (endYs[1] < endYs[0] ? -7 : 7)
+  }
+  const paths = series.map((s, si) => {
+    const d = s.values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')
+    const markers = s.values.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="5" fill="${s.color}" stroke="#fcfcfb" stroke-width="2"/>`).join('')
+    const endLabel = `<text x="${(x(last) + 8).toFixed(1)}" y="${(endYs[si] + 3).toFixed(1)}" font-size="10" fill="${INK_SECONDARY}" font-weight="700">${s.fmt(s.values[last])}</text>`
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${markers}${endLabel}`
+  }).join('')
+
+  const xLabels = labels.map((l, i) => `<text x="${x(i).toFixed(1)}" y="${H - 6}" font-size="9" fill="${INK_MUTED}" text-anchor="middle">${l}</text>`).join('')
+
+  const hitW = (xStep || 40)
+  const hitCols = labels.map((l, i) => `<rect class="chart-hit" data-i="${i}" x="${(x(i) - hitW / 2).toFixed(1)}" y="${padT}" width="${hitW.toFixed(1)}" height="${plotH}" fill="transparent"/>`).join('')
+
+  container.innerHTML = `
+    <div class="relative">
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto block" role="img" aria-label="Ventas vs cobrado, últimos 6 meses">
+        ${gridLines}
+        <line class="chart-crosshair" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="${INK_MUTED}" stroke-width="1" opacity="0"/>
+        ${paths}
+        ${xLabels}
+        ${hitCols}
+      </svg>
+      <div class="chart-tooltip hidden absolute z-10 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none" style="min-width:150px"></div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs">
+      ${series.map(s => `<div class="flex items-center gap-1.5"><span style="width:14px;height:2px;background:${s.color};display:inline-block;border-radius:1px"></span><span class="text-gray-500">${s.label}</span></div>`).join('')}
+    </div>
+  `
+
+  const svg = container.querySelector('svg')
+  const crosshair = container.querySelector('.chart-crosshair')
+  const tooltip = container.querySelector('.chart-tooltip')
+
+  function showAt(i) {
+    const xi = x(i).toFixed(1)
+    crosshair.setAttribute('x1', xi); crosshair.setAttribute('x2', xi); crosshair.setAttribute('opacity', '1')
+    const rect = svg.getBoundingClientRect()
+    const scaleX = rect.width / W
+    const px = x(i) * scaleX
+    tooltip.replaceChildren()
+    const titleEl = document.createElement('div')
+    titleEl.className = 'font-semibold mb-1'
+    titleEl.textContent = labels[i]
+    tooltip.appendChild(titleEl)
+    series.forEach(s => {
+      const row = document.createElement('div')
+      row.className = 'flex items-center justify-between gap-3'
+      row.innerHTML = `<span class="flex items-center gap-1 text-gray-300"><span style="width:8px;height:2px;background:${s.color};display:inline-block"></span></span><span class="font-bold"></span>`
+      row.querySelector('span.text-gray-300').appendChild(document.createTextNode(s.label))
+      row.querySelector('span.font-bold').textContent = s.fmt(s.values[i])
+      tooltip.appendChild(row)
+    })
+    tooltip.classList.remove('hidden')
+    tooltip.style.left = px + 'px'
+    tooltip.style.top = (padT - 2) + 'px'
+    tooltip.style.transform = 'translate(-50%, 0)'
+  }
+  function hide() { crosshair.setAttribute('opacity', '0'); tooltip.classList.add('hidden') }
+
+  container.querySelectorAll('.chart-hit').forEach(el => {
+    const i = +el.dataset.i
+    el.addEventListener('pointerenter', () => showAt(i))
+    el.addEventListener('pointermove', () => showAt(i))
+    el.addEventListener('pointerleave', hide)
+    el.addEventListener('focus', () => showAt(i))
+    el.addEventListener('blur', hide)
+  })
+}
+
+// ── Barras agrupadas (margen por categoría x estado) ───────────────────────
+function renderGroupedBarChart(container, groups, series) {
+  if (!container) return
+  const W = 640, H = 230
+  const padL = 34, padR = 12, padT = 20, padB = 30
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+  const n = groups.length
+  const groupW = plotW / n
+  const barGap = 3
+  const maxBarThick = 24
+  const barW = Math.min(maxBarThick, (groupW - 16 - barGap * (series.length - 1)) / series.length)
+  const clusterW = barW * series.length + barGap * (series.length - 1)
+  const clusterStart = i => padL + i * groupW + (groupW - clusterW) / 2
+
+  const allVals = series.flatMap(s => s.values.filter(v => v !== null))
+  const yMax = niceCeil(Math.max(1, ...allVals) * 1.2)
+  const y0 = padT + plotH
+  const yFor = v => padT + plotH - (v / yMax) * plotH
+
+  const yTicks = 4
+  const gridLines = Array.from({ length: yTicks + 1 }, (_, i) => {
+    const v = yMax * i / yTicks
+    const yy = yFor(v)
+    return `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W - padR}" y2="${yy.toFixed(1)}" stroke="${GRID_LINE}" stroke-width="1"/>`
+  }).join('')
+
+  let bars = ''
+  groups.forEach((g, gi) => {
+    series.forEach((s, si) => {
+      const v = s.values[gi]
+      if (v === null || v === undefined) return
+      const bx = clusterStart(gi) + si * (barW + barGap)
+      const by = yFor(Math.max(v, 0))
+      const bh = Math.max(y0 - by, 2)
+      bars += `
+        <g class="chart-hit" tabindex="0" data-g="${gi}" data-s="${si}" data-v="${v.toFixed(1)}">
+          <rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="4" ry="4" fill="${s.color}"/>
+          <rect x="${bx.toFixed(1)}" y="${(by + Math.min(bh, 4)).toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(bh - 4, 0).toFixed(1)}" fill="${s.color}"/>
+          <text x="${(bx + barW / 2).toFixed(1)}" y="${(by - 5).toFixed(1)}" font-size="9" text-anchor="middle" fill="${INK_SECONDARY}" font-weight="700">${v.toFixed(0)}%</text>
+        </g>
+      `
+    })
+  })
+
+  const xLabels = groups.map((g, gi) => `<text x="${(padL + gi * groupW + groupW / 2).toFixed(1)}" y="${H - 10}" font-size="10" text-anchor="middle" fill="${INK_MUTED}">${g.label}</text>`).join('')
+  const baseline = `<line x1="${padL}" y1="${y0}" x2="${W - padR}" y2="${y0}" stroke="${INK_MUTED}" stroke-width="1"/>`
+
+  container.innerHTML = `
+    <div class="relative">
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto block" role="img" aria-label="Margen por categoría, enviados vs aprobados vs rechazados">
+        ${gridLines}${bars}${baseline}${xLabels}
+      </svg>
+      <div class="chart-tooltip hidden absolute z-10 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none" style="min-width:150px"></div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs flex-wrap">
+      ${series.map(s => `<div class="flex items-center gap-1.5"><span style="width:10px;height:10px;background:${s.color};display:inline-block;border-radius:2px"></span><span class="text-gray-500">${s.label}</span></div>`).join('')}
+    </div>
+  `
+
+  const svg = container.querySelector('svg')
+  const tooltip = container.querySelector('.chart-tooltip')
+  container.querySelectorAll('.chart-hit').forEach(el => {
+    const gi = +el.dataset.g, si = +el.dataset.s
+    const show = () => {
+      const rect = svg.getBoundingClientRect()
+      const bx = clusterStart(gi) + si * (barW + barGap) + barW / 2
+      const scaleX = rect.width / W
+      tooltip.replaceChildren()
+      const l1 = document.createElement('div'); l1.className = 'font-semibold'; l1.textContent = groups[gi].label
+      const l2 = document.createElement('div'); l2.className = 'text-gray-300'; l2.textContent = series[si].label
+      const l3 = document.createElement('div'); l3.className = 'font-bold'; l3.textContent = el.dataset.v + '% margen'
+      tooltip.append(l1, l2, l3)
+      tooltip.classList.remove('hidden')
+      tooltip.style.left = (bx * scaleX) + 'px'
+      tooltip.style.top = (padT - 2) + 'px'
+      tooltip.style.transform = 'translate(-50%, 0)'
+    }
+    el.addEventListener('pointerenter', show)
+    el.addEventListener('pointermove', show)
+    el.addEventListener('pointerleave', () => tooltip.classList.add('hidden'))
+    el.addEventListener('focus', show)
+    el.addEventListener('blur', () => tooltip.classList.add('hidden'))
+  })
+}
+
+// ── Barra apilada horizontal (parte-del-todo: estado de los presupuestos) ──
+function renderStackedBar(container, segments) {
+  if (!container) return
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1
+  const W = 640, H = 36
+  const gap = 2
+  let cursor = 0
+  const parts = segments.map(s => {
+    const w = Math.max(0, (s.value / total) * (W - gap * (segments.length - 1)))
+    const seg = { ...s, x: cursor, w, pct: s.value / total * 100 }
+    cursor += w + gap
+    return seg
+  })
+  const bars = parts.map(p => {
+    const showLabel = p.w > 70
+    return `
+      <g class="chart-hit" tabindex="0" data-label="${p.label}" data-value="${p.value}" data-pct="${p.pct.toFixed(1)}">
+        <rect x="${p.x.toFixed(1)}" y="0" width="${p.w.toFixed(1)}" height="${H}" rx="6" fill="${p.color}"/>
+        ${showLabel ? `<text x="${(p.x + p.w / 2).toFixed(1)}" y="${H / 2 + 4}" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">${p.value} • ${p.pct.toFixed(0)}%</text>` : ''}
+      </g>
+    `
+  }).join('')
+
+  container.innerHTML = `
+    <div class="relative">
+      <svg viewBox="0 0 ${W} ${H}" class="w-full h-auto block" role="img" aria-label="Estado de los presupuestos">${bars}</svg>
+      <div class="chart-tooltip hidden absolute z-10 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none"></div>
+    </div>
+    <div class="flex gap-4 mt-2 text-xs flex-wrap">
+      ${segments.map(s => `<div class="flex items-center gap-1.5"><span style="width:10px;height:10px;background:${s.color};display:inline-block;border-radius:3px"></span><span class="text-gray-500">${s.label} (${s.value})</span></div>`).join('')}
+    </div>
+  `
+
+  const svg = container.querySelector('svg')
+  const tooltip = container.querySelector('.chart-tooltip')
+  container.querySelectorAll('.chart-hit').forEach((el, idx) => {
+    const show = () => {
+      const rect = svg.getBoundingClientRect()
+      const p = parts[idx]
+      const scaleX = rect.width / W
+      tooltip.replaceChildren()
+      const l1 = document.createElement('div'); l1.className = 'font-semibold'; l1.textContent = el.dataset.label
+      const l2 = document.createElement('div'); l2.textContent = `${el.dataset.value} pptos · ${el.dataset.pct}%`
+      tooltip.append(l1, l2)
+      tooltip.classList.remove('hidden')
+      tooltip.style.left = ((p.x + p.w / 2) * scaleX) + 'px'
+      tooltip.style.top = '4px'
+      tooltip.style.transform = 'translate(-50%, 0)'
+    }
+    el.addEventListener('pointerenter', show)
+    el.addEventListener('pointermove', show)
+    el.addEventListener('pointerleave', () => tooltip.classList.add('hidden'))
+    el.addEventListener('focus', show)
+    el.addEventListener('blur', () => tooltip.classList.add('hidden'))
+  })
+}
+
+async function montarMargenCategoriaDashboard(cotizaciones) {
+  const cont = document.getElementById('chart-margen-categoria')
+  if (!cont) return
+  const cots = cotizaciones.filter(c => ['enviada', 'aprobada', 'rechazada'].includes(c.estado))
+  if (!cots.length) {
+    cont.innerHTML = '<p class="text-gray-400 text-sm text-center py-8">No hay presupuestos enviados, aprobados o rechazados todavía.</p>'
+    return
+  }
+  const { data: items } = await supabase
+    .from('cotizacion_items')
+    .select('cotizacion_id, descripcion, cantidad, precio_unitario, notas')
+    .in('cotizacion_id', cots.map(c => c.id))
+
+  const porCot = calcularMargenPorCategoria(cots, items)
+  const resumenes = MARGEN_CAT_ESTADOS.map(e => resumenPorEstado(porCot, e.key))
+
+  renderGroupedBarChart(
+    cont,
+    MARGEN_CAT_ESTADOS.map(e => ({ key: e.key, label: e.label })),
+    [
+      { label: 'Paneles',    color: COLOR_PANEL,     values: resumenes.map(r => r.panel) },
+      { label: 'Accesorios', color: COLOR_ACCESORIO, values: resumenes.map(r => r.accesorio) },
+      { label: 'Flete',      color: COLOR_FLETE,     values: resumenes.map(r => r.flete) },
+    ]
+  )
+}
 
 export async function renderDashboard(contenedor) {
   contenedor.innerHTML = `
@@ -112,6 +411,13 @@ export async function renderDashboard(contenedor) {
   }
 
   const maxVal = Math.max(...ventasPorMes.map(v => Math.max(v.ventas, v.cobrados)), 1)
+
+  // Estado de los presupuestos (todos, no solo del mes) + tasa de conversión
+  const cantEnviada   = (cotizaciones || []).filter(c => c.estado === 'enviada').length
+  const cantAprobada  = (cotizaciones || []).filter(c => c.estado === 'aprobada').length
+  const cantRechazada = (cotizaciones || []).filter(c => c.estado === 'rechazada').length
+  const decididos     = cantAprobada + cantRechazada
+  const tasaConversion = decididos > 0 ? cantAprobada / decididos * 100 : null
 
   // Últimas cotizaciones pendientes de aprobación
   const pptosPendientes = (cotizaciones || [])
@@ -251,24 +557,28 @@ export async function renderDashboard(contenedor) {
     <!-- Gráfico ventas vs cobros -->
     <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-6">
       <h3 class="font-semibold text-gray-700 mb-4">Ventas vs Cobros — últimos 6 meses</h3>
-      <div class="flex items-end gap-3 h-40">
-        ${ventasPorMes.map(v => `
-          <div class="flex-1 flex flex-col items-center gap-1">
-            <div class="w-full flex gap-1 items-end" style="height:120px">
-              <div class="flex-1 bg-green-400 rounded-t transition-all"
-                style="height:${v.ventas > 0 ? Math.max(4, v.ventas/maxVal*120) : 0}px"
-                title="Ventas: U$S ${v.ventas.toFixed(0)}"></div>
-              <div class="flex-1 bg-blue-400 rounded-t transition-all"
-                style="height:${v.cobrados > 0 ? Math.max(4, v.cobrados/maxVal*120) : 0}px"
-                title="Cobrado: U$S ${v.cobrados.toFixed(0)}"></div>
-            </div>
-            <p class="text-xs text-gray-400">${v.label}</p>
-          </div>
-        `).join('')}
+      <div id="chart-ventas-cobros"></div>
+    </div>
+
+    <!-- Estado de presupuestos + conversión -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm md:col-span-2">
+        <h3 class="font-semibold text-gray-700 mb-4 text-sm">Estado de los presupuestos</h3>
+        <div id="chart-estado-pptos"></div>
       </div>
-      <div class="flex gap-4 mt-3">
-        <div class="flex items-center gap-1"><div class="w-3 h-3 bg-green-400 rounded"></div><span class="text-xs text-gray-500">Ventas aprobadas</span></div>
-        <div class="flex items-center gap-1"><div class="w-3 h-3 bg-blue-400 rounded"></div><span class="text-xs text-gray-500">Cobrado</span></div>
+      <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm flex flex-col justify-center items-center text-center">
+        <p class="text-xs text-gray-400 mb-1">Tasa de conversión</p>
+        <p class="font-black text-gray-900" style="font-size:48px;line-height:1">${tasaConversion === null ? '—' : tasaConversion.toFixed(0) + '%'}</p>
+        <p class="text-xs text-gray-400 mt-1">${decididos} decididos: ${cantAprobada} ganados, ${cantRechazada} perdidos</p>
+      </div>
+    </div>
+
+    <!-- Margen por categoría: enviados vs aprobados vs rechazados -->
+    <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm mb-6">
+      <h3 class="font-semibold text-gray-700 text-sm mb-1">Margen por categoría — enviados vs aprobados vs rechazados</h3>
+      <p class="text-xs text-gray-400 mb-4">Margen real (venta - costo), ponderado por venta. Para el detalle presupuesto por presupuesto: Finanzas → Rentabilidad.</p>
+      <div id="chart-margen-categoria">
+        <p class="text-gray-400 text-sm text-center py-8">Cargando...</p>
       </div>
     </div>
 
@@ -316,6 +626,23 @@ export async function renderDashboard(contenedor) {
       </div>
     </div>
   `
+
+  renderTrendChart(
+    document.getElementById('chart-ventas-cobros'),
+    ventasPorMes.map(v => v.label),
+    [
+      { label: 'Ventas aprobadas', color: COLOR_GOOD, values: ventasPorMes.map(v => v.ventas), fmt: fmtUsd0 },
+      { label: 'Cobrado',          color: COLOR_INFO, values: ventasPorMes.map(v => v.cobrados), fmt: fmtUsd0 },
+    ]
+  )
+
+  renderStackedBar(document.getElementById('chart-estado-pptos'), [
+    { label: 'Enviados (pendientes)', value: cantEnviada,   color: COLOR_INFO },
+    { label: 'Aprobados (ganados)',   value: cantAprobada,  color: COLOR_GOOD },
+    { label: 'Rechazados (perdidos)', value: cantRechazada, color: COLOR_CRITICAL },
+  ])
+
+  montarMargenCategoriaDashboard(cotizaciones || [])
 
   document.getElementById('btn-excel-dash').addEventListener('click', () => {
     const hojaResumen = [
