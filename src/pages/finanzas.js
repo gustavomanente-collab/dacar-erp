@@ -1643,6 +1643,174 @@ async function renderCalce() {
     }
   }
 
+  // Margen real por categoría (panel/accesorio/flete), comparando enviados
+  // (pendientes) vs aprobados (ganados) vs rechazados (perdidos), para ver
+  // si se está cotizando alto, bajo, o dónde está el punto justo.
+  const MARGEN_CAT_TIPOS = ['panel', 'accesorio', 'flete']
+  const MARGEN_CAT_ESTADOS = [
+    { key: 'enviada',   label: 'Enviados (pendientes)' },
+    { key: 'aprobada',  label: 'Aprobados (ganados)' },
+    { key: 'rechazada', label: 'Rechazados (perdidos)' },
+  ]
+
+  async function montarMargenPorCategoria() {
+    const cont = document.getElementById('margen-categoria-container')
+    if (!cont) return
+
+    const { data: cots } = await supabase
+      .from('cotizaciones')
+      .select('id, numero, estado, clientes(nombre)')
+      .in('estado', ['enviada', 'aprobada', 'rechazada'])
+      .order('numero')
+
+    if (!cots?.length) {
+      cont.innerHTML = '<p class="text-gray-400 text-sm p-4">No hay presupuestos enviados, aprobados o rechazados todavía.</p>'
+      return
+    }
+
+    const { data: items } = await supabase
+      .from('cotizacion_items')
+      .select('cotizacion_id, descripcion, cantidad, precio_unitario, notas')
+      .in('cotizacion_id', cots.map(c => c.id))
+
+    const itemsPorCot = {}
+    ;(items || []).forEach(it => {
+      (itemsPorCot[it.cotizacion_id] ||= []).push(it)
+    })
+
+    // Margen real (venta - costo) / venta por categoría, reconstruido desde
+    // costo_unit guardado en notas (igual que en historial.js/rentabilidad).
+    const porCot = cots.map(c => {
+      const suma = { panel: { costo: 0, venta: 0 }, accesorio: { costo: 0, venta: 0 }, flete: { costo: 0, venta: 0 } }
+      ;(itemsPorCot[c.id] || []).forEach(it => {
+        if (it.descripcion?.includes('[OPCIONAL]')) return
+        let extra = {}
+        try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
+        if (!MARGEN_CAT_TIPOS.includes(extra.tipo)) return
+        const cant  = parseFloat(it.cantidad) || 0
+        const venta = cant * (parseFloat(it.precio_unitario) || 0)
+        const costo = cant * (extra.costo_unit || 0)
+        suma[extra.tipo].costo += costo
+        suma[extra.tipo].venta += venta
+      })
+      const costoTotal = MARGEN_CAT_TIPOS.reduce((s, t) => s + suma[t].costo, 0)
+      const ventaTotal = MARGEN_CAT_TIPOS.reduce((s, t) => s + suma[t].venta, 0)
+      return { ...c, suma, costoTotal, ventaTotal }
+    })
+
+    const margenPct = (costo, venta) => venta > 0 ? (venta - costo) / venta * 100 : null
+    const fmtPct = v => v === null ? '—' : v.toFixed(1) + '%'
+
+    // Resumen ponderado por venta (no promedio simple de %, para que un ppto
+    // chico no pese lo mismo que uno grande) — por estado, y por categoría.
+    function resumenEstado(estadoKey) {
+      const del = porCot.filter(c => c.estado === estadoKey)
+      const acc = { panel: { costo: 0, venta: 0 }, accesorio: { costo: 0, venta: 0 }, flete: { costo: 0, venta: 0 }, costoTotal: 0, ventaTotal: 0 }
+      del.forEach(c => {
+        MARGEN_CAT_TIPOS.forEach(t => { acc[t].costo += c.suma[t].costo; acc[t].venta += c.suma[t].venta })
+        acc.costoTotal += c.costoTotal
+        acc.ventaTotal += c.ventaTotal
+      })
+      return {
+        cantidad: del.length,
+        ventaTotal: acc.ventaTotal,
+        panel:     margenPct(acc.panel.costo, acc.panel.venta),
+        accesorio: margenPct(acc.accesorio.costo, acc.accesorio.venta),
+        flete:     margenPct(acc.flete.costo, acc.flete.venta),
+        total:     margenPct(acc.costoTotal, acc.ventaTotal),
+      }
+    }
+    const resumenes = MARGEN_CAT_ESTADOS.map(e => ({ ...e, r: resumenEstado(e.key) }))
+
+    function filasDetalle(filtro) {
+      const lista = filtro ? porCot.filter(c => c.estado === filtro) : porCot
+      if (!lista.length) return '<tr><td colspan="7" class="text-center text-gray-400 py-4">Sin presupuestos en este estado.</td></tr>'
+      return lista.map((c, i) => `
+        <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+          <td class="px-3 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
+          <td class="px-3 py-2">${c.clientes?.nombre || ''}</td>
+          <td class="px-3 py-2 text-center">${MARGEN_CAT_ESTADOS.find(e => e.key === c.estado)?.label || c.estado}</td>
+          <td class="px-3 py-2 text-right">${fmtPct(margenPct(c.suma.panel.costo, c.suma.panel.venta))}</td>
+          <td class="px-3 py-2 text-right">${fmtPct(margenPct(c.suma.accesorio.costo, c.suma.accesorio.venta))}</td>
+          <td class="px-3 py-2 text-right">${fmtPct(margenPct(c.suma.flete.costo, c.suma.flete.venta))}</td>
+          <td class="px-3 py-2 text-right font-bold">${fmtPct(margenPct(c.costoTotal, c.ventaTotal))}</td>
+        </tr>
+      `).join('')
+    }
+
+    cont.innerHTML = `
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
+        <div class="bg-gray-50 px-4 py-3 border-b">
+          <h4 class="font-semibold text-gray-700 text-sm">Margen por categoría — enviados vs aprobados vs rechazados</h4>
+          <p class="text-xs text-gray-400 mt-0.5">Margen real (venta - costo) / venta, reconstruido de los ítems de cada ppto. Ponderado por venta, no promedio simple.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">Estado</th>
+              <th class="px-3 py-2 text-center">Pptos</th>
+              <th class="px-3 py-2 text-right">Venta total</th>
+              <th class="px-3 py-2 text-right">Margen paneles</th>
+              <th class="px-3 py-2 text-right">Margen accesorios</th>
+              <th class="px-3 py-2 text-right">Margen flete</th>
+              <th class="px-3 py-2 text-right">Margen total</th>
+            </tr></thead>
+            <tbody>
+              ${resumenes.map((e, i) => `
+                <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+                  <td class="px-3 py-2 font-medium">${e.label}</td>
+                  <td class="px-3 py-2 text-center text-gray-500">${e.r.cantidad}</td>
+                  <td class="px-3 py-2 text-right">U$S ${e.r.ventaTotal.toFixed(0)}</td>
+                  <td class="px-3 py-2 text-right">${fmtPct(e.r.panel)}</td>
+                  <td class="px-3 py-2 text-right">${fmtPct(e.r.accesorio)}</td>
+                  <td class="px-3 py-2 text-right">${fmtPct(e.r.flete)}</td>
+                  <td class="px-3 py-2 text-right font-bold">${fmtPct(e.r.total)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-4">
+        <div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between gap-3 flex-wrap">
+          <h4 class="font-semibold text-gray-700 text-sm">Detalle por presupuesto</h4>
+          <div class="flex gap-1 flex-wrap" id="filtros-margen-cat">
+            <button onclick="filtrarMargenCat('')" data-f=""
+              class="mc-filtro px-2 py-1 rounded-full text-[10px] font-medium bg-gray-900 text-white">Todos</button>
+            ${MARGEN_CAT_ESTADOS.map(e => `
+              <button onclick="filtrarMargenCat('${e.key}')" data-f="${e.key}"
+                class="mc-filtro px-2 py-1 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600 hover:bg-gray-200">${e.label}</button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="bg-gray-900 text-white">
+              <th class="px-3 py-2 text-left">N° Ppto</th>
+              <th class="px-3 py-2 text-left">Cliente</th>
+              <th class="px-3 py-2 text-center">Estado</th>
+              <th class="px-3 py-2 text-right">Margen paneles</th>
+              <th class="px-3 py-2 text-right">Margen accesorios</th>
+              <th class="px-3 py-2 text-right">Margen flete</th>
+              <th class="px-3 py-2 text-right">Margen total</th>
+            </tr></thead>
+            <tbody id="tbody-margen-cat">${filasDetalle('')}</tbody>
+          </table>
+        </div>
+      </div>
+    `
+
+    window.filtrarMargenCat = (filtro) => {
+      document.querySelectorAll('.mc-filtro').forEach(b => {
+        const activo = b.dataset.f === filtro
+        b.className = 'mc-filtro px-2 py-1 rounded-full text-[10px] font-medium ' +
+          (activo ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+      })
+      document.getElementById('tbody-margen-cat').innerHTML = filasDetalle(filtro)
+    }
+  }
+
   async function renderRentabilidad() {
     const el = document.getElementById('fin-content')
     el.innerHTML = '<p class="text-gray-400 text-sm p-4">Cargando...</p>'
@@ -1890,7 +2058,13 @@ async function renderCalce() {
           </table>
         </div>
       </div>
+
+      <div id="margen-categoria-container">
+        <p class="text-gray-400 text-sm p-4">Cargando margen por categoría...</p>
+      </div>
     `
+
+    montarMargenPorCategoria()
 
     window.exportarRentabilidadExcel = () => {
       const filas = [
