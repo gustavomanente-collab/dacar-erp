@@ -102,7 +102,8 @@ let items = []
 let clienteId = null, clienteData = null, cotizacionGuardada = null
 let panelSesion = []
 
-export async function renderCotizador(contenedor) {
+export async function renderCotizador(contenedor, perfil) {
+const esVendedor = perfil?.role === 'vendedor'
 const { data: lastCot } = await supabase
 .from('cotizaciones').select('numero').order('numero', { ascending: false }).limit(1)
 const nextNum = lastCot?.length ? lastCot[0].numero + 1 : 1
@@ -316,8 +317,11 @@ contenedor.innerHTML = `
 
    <!-- TOTALES + COMISIÓN -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-     <!-- Comisión (no se imprime) -->
-     <div class="bg-purple-50 border border-purple-200 rounded-xl p-4">
+     <!-- Comisión (no se imprime). Oculta para el rol vendedor, pero los inputs
+          siguen en el DOM (solo con class="hidden") para que recalcular() y el
+          guardado de la cotización sigan calculando la comisión real con sus
+          valores por defecto -- no hay que tocar esa lógica. -->
+     <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 ${esVendedor ? 'hidden' : ''}">
        <p class="text-xs font-semibold text-purple-600 mb-3">🤝 Comisión vendedor (no se imprime)</p>
        <div class="grid grid-cols-2 gap-2 mb-3">
          <div>
@@ -358,7 +362,7 @@ contenedor.innerHTML = `
          <div class="flex justify-between text-gray-500">
            <span>Dto. gerencial:</span><span id="v-dto">- U$S 0.00</span>
          </div>
-         <div class="flex justify-between text-gray-500 text-xs">
+         <div class="flex justify-between text-gray-500 text-xs ${esVendedor ? 'hidden' : ''}">
            <span>Utilidad libre:</span>
            <div class="text-right">
              <div id="v-util-usd">U$S 0.00</div>

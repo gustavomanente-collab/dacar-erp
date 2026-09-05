@@ -108,9 +108,9 @@ if (pagina === 'dashboard') {
     } else if (pagina === 'clientes') {
     renderClientes(contenido)
   } else if (pagina === 'cotizador') {
-    renderCotizador(contenido)
+    renderCotizador(contenido, perfilGlobal)
   } else if (pagina === 'historial') {
-    renderHistorial(contenido)
+    renderHistorial(contenido, perfilGlobal)
   } else if (pagina === 'finanzas') {
     renderFinanzas(contenido, perfilGlobal)
   } else if (pagina === 'ventas') {

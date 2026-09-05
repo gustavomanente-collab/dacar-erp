@@ -7,7 +7,8 @@ const ESTADOS = {
   rechazada: { label: 'Rechazada', color: 'bg-red-100 text-red-600' },
 }
 
-export async function renderHistorial(contenedor) {
+export async function renderHistorial(contenedor, perfil) {
+  const esVendedor = perfil?.role === 'vendedor'
   // Limpiar modales huérfanos de visitas anteriores
   document.querySelectorAll('[data-hist-modal]').forEach(m => m.remove())
 
@@ -291,6 +292,71 @@ window.exportarExcel = async (id) => {
 
     const nro   = `2026-${String(cot.numero).padStart(3,'0')}`
     const fecha = new Date(cot.created_at).toLocaleDateString('es-AR')
+
+    // El vendedor exporta una versión simplificada: venta/precio sí,
+    // costo unitario y utilidad no (ver el análisis interno más abajo,
+    // reservado a gerencia/administrativo). Se arma aparte, sin tocar la
+    // planilla de gerencia, para no arriesgar romper sus fórmulas por columna.
+    if (esVendedor) {
+      const sTitleV  = { font: { bold: true, sz: 14, color: { rgb: '0F172A' } } }
+      const sHeaderV = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F172A' } }, alignment: { horizontal: 'center' } }
+      const sMoneyV  = { numFmt: '"U$S "#,##0.00' }
+      const sMoneyBV = { font: { bold: true }, numFmt: '"U$S "#,##0.00' }
+      const sBoldV   = { font: { bold: true } }
+      const sCenterV = { alignment: { horizontal: 'center' } }
+      const sGrayV   = { fill: { fgColor: { rgb: 'F8FAFC' } } }
+
+      const filasV = [
+        [{ v: 'DACAR SRL — PRESUPUESTO', s: sTitleV }],
+        [],
+        [{ v: 'N° Presupuesto', s: sBoldV }, { v: nro }, { v: '' }, { v: 'Fecha', s: sBoldV }, { v: fecha }],
+        [{ v: 'Cliente', s: sBoldV }, { v: cot.clientes?.nombre || '' }, { v: '' }, { v: 'Obra', s: sBoldV }, { v: cot.clientes?.obra || '' }],
+        [{ v: 'Dirección', s: sBoldV }, { v: cot.clientes?.direccion || '' }, { v: '' }, { v: 'Teléfono', s: sBoldV }, { v: cot.clientes?.telefono || '' }],
+        [],
+        [
+          { v: 'DESCRIPCIÓN',     s: sHeaderV },
+          { v: 'CANT/M²',         s: sHeaderV },
+          { v: 'PRECIO UNIT U$S', s: sHeaderV },
+          { v: 'VENTA TOTAL U$S', s: sHeaderV },
+          { v: 'OPCIONAL',        s: sHeaderV },
+        ],
+      ]
+      let totalVentaV = 0
+      items.forEach((it, i) => {
+        const esOpc      = it.descripcion.includes('[OPCIONAL]')
+        const cantidad   = parseFloat(it.cantidad) || 0
+        const venta_unit = parseFloat(it.precio_unitario) || 0
+        const venta_tot  = cantidad * venta_unit
+        if (!esOpc) totalVentaV += venta_tot
+        const s = i % 2 === 0 ? {} : sGrayV
+        filasV.push([
+          { v: it.descripcion.replace(' [OPCIONAL]', ''), s },
+          { v: cantidad,   t: 'n', s: { ...s, ...sCenterV } },
+          { v: venta_unit, t: 'n', s: { ...s, ...sMoneyV } },
+          { v: venta_tot,  t: 'n', s: { ...s, ...sMoneyV } },
+          { v: esOpc ? 'SÍ' : '', s: { ...s, ...sCenterV } },
+        ])
+      })
+      filasV.push([])
+      if (cot.descuento_pct > 0) {
+        const descMontoV = totalVentaV * (cot.descuento_pct / 100)
+        filasV.push([
+          { v: `Descuento gerencial (${cot.descuento_pct}%)` }, { v: '' }, { v: '' },
+          { v: -descMontoV, t: 'n', s: sMoneyV },
+        ])
+      }
+      filasV.push([
+        { v: 'TOTAL FINAL', s: { font: { bold: true, sz: 12 } } }, { v: '' }, { v: '' },
+        { v: cot.total_final, t: 'n', s: { ...sMoneyBV, font: { bold: true, sz: 12, color: { rgb: '15803D' } } } },
+      ])
+
+      const wsV = XLSX.utils.aoa_to_sheet(filasV)
+      wsV['!cols'] = [{ wch: 48 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 9 }]
+      const wbV = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wbV, wsV, 'Presupuesto')
+      XLSX.writeFile(wbV, `DACAR_${nro}_${(cot.clientes?.nombre || 'cliente').replace(/\s+/g,'_')}.xlsx`)
+      return
+    }
 
     // Reconstruir costos desde notas
 const itemsConCosto = items.map(it => {
