@@ -1286,6 +1286,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
 
   const { data: cot, error } = await supabase.from('cotizaciones').insert({
     cliente_id: clienteId,
+    vendedor_id: window.perfilGlobal?.id || null,
     margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
     descuento_pct: descG,
     flete: 0,

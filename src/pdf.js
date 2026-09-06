@@ -357,3 +357,83 @@ export async function generarPDFProyecto(proyecto, items, moPresup, resumen, emp
   const fname = `Proyecto_${(proyecto.nombre || 'sin_nombre').replace(/\s+/g, '_').replace(/[^\w\-]/g, '')}.pdf`
   doc.save(fname)
 }
+
+// ════════════════════════════════════════════════════════
+// INFORME DE COMISIONES POR VENDEDOR (gerencia -> para mandarle al vendedor)
+// ════════════════════════════════════════════════════════
+export async function generarInformePdfComisiones(vendedorNombre, comisiones) {
+  const doc = new jsPDF()
+  const pw = doc.internal.pageSize.getWidth()
+  const ph = doc.internal.pageSize.getHeight()
+
+  try {
+    const img = await cargarImagen('https://i.ibb.co/gZ6vn8C3/encabezado-png.png')
+    doc.addImage(img, 'PNG', 10, 8, pw - 20, (pw - 20) * 0.18)
+  } catch (e) {
+    doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text('DACAR ESTRUCTURAS', pw / 2, 20, { align: 'center' })
+  }
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.8)
+  doc.line(10, 44, pw - 10, 44)
+
+  // Título + vendedor (derecha)
+  doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text('INFORME DE COMISIONES', pw - 10, 50, { align: 'right' })
+  doc.setFontSize(16).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text(vendedorNombre || 'Vendedor', pw - 10, 58, { align: 'right' })
+  doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(100)
+  doc.text(`Emitido: ${new Date().toLocaleDateString('es-AR')}`, pw - 10, 64, { align: 'right' })
+
+  const pendientes  = comisiones.filter(c => !c.liquidado)
+  const liquidadas  = comisiones.filter(c => c.liquidado)
+  const totalPend   = pendientes.reduce((s, c) => s + c.comision, 0)
+  const totalLiquid = liquidadas.reduce((s, c) => s + c.comision, 0)
+
+  // Resumen (izquierda)
+  doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(15, 23, 42)
+  doc.text('Resumen', 10, 54)
+  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(80)
+  doc.text(`Comisión pendiente de liquidar: U$S ${totalPend.toFixed(2)}`, 10, 60)
+  doc.text(`Comisión ya liquidada: U$S ${totalLiquid.toFixed(2)}`, 10, 66)
+
+  const filas = comisiones.map(c => [
+    new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR'),
+    c.clientes?.nombre || '',
+    c.cotizaciones?.numero ? `2026-${String(c.cotizaciones.numero).padStart(3, '0')}` : '-',
+    `U$S ${(c.monto_usd || 0).toFixed(2)}`,
+    `${c.pctComision}%`,
+    `U$S ${c.comision.toFixed(2)}`,
+    c.liquidado ? 'Liquidada' : 'Pendiente',
+  ])
+
+  autoTable(doc, {
+    startY: 74,
+    head: [['Fecha', 'Cliente', 'Ppto', 'Cobrado', '% Com.', 'Comisión', 'Estado']],
+    body: filas.length ? filas : [['—', 'Sin comisiones registradas', '', '', '', '', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [88, 28, 135], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+    bodyStyles: { fontSize: 8, textColor: [30, 30, 30] },
+    columnStyles: {
+      3: { halign: 'right' },
+      4: { halign: 'center' },
+      5: { halign: 'right', fontStyle: 'bold' },
+      6: { halign: 'center' },
+    },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+  })
+
+  const y = doc.lastAutoTable.finalY + 8
+  doc.setFontSize(8).setFont('helvetica', 'italic').setTextColor(120)
+  doc.text('Informe generado a partir de las ventas registradas con este vendedor asignado en el sistema.', 10, y)
+
+  const pieY = ph - 10
+  doc.setDrawColor(230, 180, 0).setLineWidth(0.4)
+  doc.line(10, pieY - 6, pw - 10, pieY - 6)
+  doc.setFontSize(7).setTextColor(120)
+  doc.text(
+    'Teófilo Madrejón 6346 - Colastine Norte, Santa Fe  |  3425 311209 / 3425 907044  |  estructurasdacar@gmail.com',
+    pw / 2, pieY, { align: 'center' }
+  )
+
+  doc.save(`Informe_Comisiones_${(vendedorNombre || 'vendedor').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`)
+}

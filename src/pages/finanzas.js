@@ -1,5 +1,6 @@
 import { supabase } from '../supabase.js'
 import { generarReciboCobro, generarReciboComision } from '../recibos.js'
+import { generarInformePdfComisiones } from '../pdf.js'
 import { ESTILOS, filaAlt, descargarExcel, fechaArchivo } from '../excelHelpers.js'
 import { MARGEN_CAT_ESTADOS, calcularMargenPorCategoria, resumenPorEstado, margenPct } from '../margenCategoria.js'
 
@@ -2074,8 +2075,12 @@ async function renderCalce() {
 
     const { data } = await supabase
       .from('cobros')
-      .select(`*, clientes(nombre), cotizaciones(numero, total_final, total_neto, total_bruto_usd, pct_comision_override)`)
+      .select(`*, clientes(nombre), cotizaciones(numero, total_final, total_neto, total_bruto_usd, pct_comision_override, vendedor_id)`)
       .order('fecha', { ascending: false })
+
+    const { data: vendedoresRaw } = await supabase
+      .from('profiles').select('id, full_name').eq('role', 'vendedor')
+    const vendedores = (vendedoresRaw || []).map(v => ({ id: v.id, nombre: v.full_name || 'Vendedor sin nombre' }))
 
     const cobrosConCot = (data || []).filter(c => c.cotizaciones)
 
@@ -2112,6 +2117,23 @@ async function renderCalce() {
         <div class="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
           <p class="text-xs text-green-600 font-medium">Ya liquidado</p>
           <p class="text-xl font-black text-green-700">U$S ${totalLiquid.toFixed(2)}</p>
+        </div>
+      </div>
+
+      <!-- Informe por vendedor (PDF) -->
+      <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+        <h3 class="font-semibold text-gray-700 text-sm mb-1">Informe de comisiones para un vendedor</h3>
+        <p class="text-xs text-gray-400 mb-3">Solo incluye ventas cargadas con un vendedor asignado desde el cotizador -- las cargadas antes de este cambio no tienen ese dato.</p>
+        <div class="flex items-center gap-2 flex-wrap">
+          <select id="filtro-vendedor-com" class="rounded-lg border-gray-300 text-sm">
+            <option value="">Elegí un vendedor...</option>
+            ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+          </select>
+          <button id="btn-informe-vendedor" disabled
+            class="bg-indigo-700 hover:bg-indigo-900 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg">
+            📄 Generar informe PDF
+          </button>
+          ${!vendedores.length ? '<span class="text-xs text-gray-400">No hay ningún usuario con rol vendedor todavía.</span>' : ''}
         </div>
       </div>
 
@@ -2227,6 +2249,18 @@ async function renderCalce() {
         colWidths: [12, 24, 12, 14, 16, 8, 14, 14, 12]
       })
     }
+
+    // Informe de comisiones por vendedor (PDF)
+    document.getElementById('filtro-vendedor-com').addEventListener('change', (e) => {
+      document.getElementById('btn-informe-vendedor').disabled = !e.target.value
+    })
+    document.getElementById('btn-informe-vendedor').addEventListener('click', () => {
+      const vendedorId = document.getElementById('filtro-vendedor-com').value
+      if (!vendedorId) return
+      const nombre = vendedores.find(v => v.id === vendedorId)?.nombre || 'Vendedor'
+      const deEsteVendedor = comisionesCalc.filter(c => c.cotizaciones?.vendedor_id === vendedorId)
+      generarInformePdfComisiones(nombre, deEsteVendedor)
+    })
 
     // Cargar historial
     cargarHistorialLiquidaciones()

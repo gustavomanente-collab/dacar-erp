@@ -486,7 +486,10 @@ export async function renderDashboard(contenedor) {
     }
   })
 
-  document.getElementById('dash-content').innerHTML = `
+  const dashEl = document.getElementById('dash-content')
+  if (!dashEl) return // el usuario ya navegó a otra página mientras esto cargaba
+
+  dashEl.innerHTML = `
 
     ${alertas.length ? `
     <!-- Alertas (beta) -->
