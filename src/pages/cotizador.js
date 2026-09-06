@@ -107,6 +107,12 @@ const esVendedor = perfil?.role === 'vendedor'
 const { data: lastCot } = await supabase
 .from('cotizaciones').select('numero').order('numero', { ascending: false }).limit(1)
 const nextNum = lastCot?.length ? lastCot[0].numero + 1 : 1
+
+// Vendedores disponibles para asignar el ppto -- alguien de la oficina puede
+// generarlo a nombre de otro vendedor (el que lo pidió), no siempre lo carga
+// el propio vendedor.
+const { data: vendedoresRaw } = await supabase.from('profiles').select('id, full_name').eq('role', 'vendedor')
+const vendedoresDisponibles = (vendedoresRaw || []).map(v => ({ id: v.id, nombre: v.full_name || 'Vendedor sin nombre' }))
 items = []; clienteId = null; clienteData = null; cotizacionGuardada = null
 window._editandoIndex = null
 
@@ -235,9 +241,18 @@ contenedor.innerHTML = `
            <span id="cli-nombre" class="text-sm font-semibold text-green-800"></span>
            <span id="cli-obra" class="text-sm text-green-600 ml-2"></span>
          </div>
-         <button onclick="cambiarCli()" class="text-xs text-green-600 hover:underline">Cambiar</button>  
+         <button onclick="cambiarCli()" class="text-xs text-green-600 hover:underline">Cambiar</button>
        </div>
      </div>
+   </div>
+
+   <!-- VENDEDOR -->
+   <div class="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+     <label class="block text-xs text-gray-400 mb-1">Vendedor (a nombre de quién se genera este presupuesto)</label>
+     <select id="sel-vendedor" class="w-full rounded-lg border-gray-200 text-sm">
+       <option value="">Sin asignar</option>
+       ${vendedoresDisponibles.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+     </select>
    </div>
 
    <!-- MÁRGENES -->
@@ -1235,12 +1250,19 @@ sugEl.classList.remove('hidden')
 } else { sugEl.classList.add('hidden') }
 }
 
+// ── VENDEDOR POR DEFECTO ──
+// Si quien está logueado es vendedor, se autoasigna (lo puede cambiar si
+// carga a nombre de otro). Si es gerencia/administrativo arranca sin elegir.
+const selVendedor = document.getElementById('sel-vendedor')
+if (selVendedor && esVendedor && perfil?.id) selVendedor.value = perfil.id
+
 // ── APLICAR DATOS DE EDICIÓN (DOM y handlers listos) ──
 if (datosEditar) {
   const mkPan = document.getElementById('mk-pan')
   const dtoGer = document.getElementById('dto-ger')
   if (mkPan) mkPan.value = datosEditar.margen_pct || 30
   if (dtoGer) dtoGer.value = datosEditar.descuento_pct || 0
+  if (selVendedor && datosEditar.vendedor_id) selVendedor.value = datosEditar.vendedor_id
   renderItems()
   recalcular()
 }
@@ -1266,6 +1288,7 @@ document.getElementById('btn-alternativa').addEventListener('click', () => {
     })),
     margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
     descuento_pct: parseFloat(document.getElementById('dto-ger').value) || 0,
+    vendedor_id: document.getElementById('sel-vendedor')?.value || null,
   }))
   window.navigate('cotizador')
 })
@@ -1286,7 +1309,7 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
 
   const { data: cot, error } = await supabase.from('cotizaciones').insert({
     cliente_id: clienteId,
-    vendedor_id: window.perfilGlobal?.id || null,
+    vendedor_id: document.getElementById('sel-vendedor')?.value || null,
     margen_pct: parseFloat(document.getElementById('mk-pan').value) || 30,
     descuento_pct: descG,
     flete: 0,
