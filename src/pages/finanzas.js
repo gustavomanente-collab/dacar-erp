@@ -137,7 +137,8 @@ contenedor.innerHTML = `
                     <p class="text-xs text-gray-500">${cot.clientes?.obra || ''}</p>
                   </div>
                 </div>
-                <!-- Liquidar comisión completa -->
+                <!-- Liquidar comisión completa -- oculta para vendedor (ve solo venta/saldo, no comisión) -->
+          ${esVendedor ? '' : `
           <div class="border-t pt-3 mb-3">
             <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between">
               <div>
@@ -151,6 +152,7 @@ contenedor.innerHTML = `
               </button>
             </div>
           </div>
+          `}
                 <div class="text-right">
                   <p class="text-xs text-gray-400">${estado}</p>
                   <p class="font-bold text-green-700 text-sm">U$S ${bruto.toFixed(2)}</p>
