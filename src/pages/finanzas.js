@@ -1784,6 +1784,9 @@ async function renderCalce() {
       .select('cotizacion_id, descripcion, cantidad, precio_unitario, notas')
       .in('cotizacion_id', cots.map(c => c.id))
 
+    const { data: config } = await supabase.from('configuracion').select('iibb_pct').eq('id', 1).single()
+    const iibbPct = config?.iibb_pct || 0
+
     const porCot = cots.map(c => {
       // Venta NETA siempre (nunca total_bruto_usd: si la venta esta facturada con IVA,
       // ese 21% extra no es utilidad, hay que girarlo a AFIP -- usarlo aca infla la comision).
@@ -1796,7 +1799,12 @@ async function renderCalce() {
       const comisionUsd  = utilidad * pctComision / 100
       const utilidadNeta = utilidad - comisionUsd
       const margenNeto   = venta > 0 ? utilidadNeta / venta * 100 : 0
-      return { ...c, venta, costo, utilidad, margen, pctComision, comisionUsd, utilidadNeta, margenNeto }
+      // IIBB (Ingresos Brutos, Santa Fe): se paga sobre la venta bruta, no sobre
+      // la utilidad -- por eso resta directo de utilidadNeta, no la multiplica.
+      const iibb          = venta * iibbPct / 100
+      const utilidadFinal = utilidadNeta - iibb
+      const margenFinal   = venta > 0 ? utilidadFinal / venta * 100 : 0
+      return { ...c, venta, costo, utilidad, margen, pctComision, comisionUsd, utilidadNeta, margenNeto, iibb, utilidadFinal, margenFinal }
     })
 
     const hoy = new Date()
@@ -1807,10 +1815,14 @@ async function renderCalce() {
     const utilidadTotal    = porCot.reduce((s, c) => s + c.utilidad, 0)
     const comisionTotal    = porCot.reduce((s, c) => s + c.comisionUsd, 0)
     const utilidadNetaTotal = utilidadTotal - comisionTotal
+    const iibbTotal        = porCot.reduce((s, c) => s + c.iibb, 0)
+    const utilidadFinalTotal = utilidadNetaTotal - iibbTotal
     const margenProm       = ventaTotal > 0 ? utilidadTotal / ventaTotal * 100 : 0
     const margenNetoProm   = ventaTotal > 0 ? utilidadNetaTotal / ventaTotal * 100 : 0
+    const margenFinalProm  = ventaTotal > 0 ? utilidadFinalTotal / ventaTotal * 100 : 0
     const utilidadMes      = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidad, 0)
     const utilidadNetaMes  = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidadNeta, 0)
+    const utilidadFinalMes = porCot.filter(c => esMesActual(c.created_at)).reduce((s, c) => s + c.utilidadFinal, 0)
 
     // Utilidad por mes (últimos 6 meses)
     const porMes = []
@@ -1886,6 +1898,38 @@ async function renderCalce() {
         <div class="bg-teal-50 border border-teal-200 rounded-xl p-4 text-center">
           <p class="text-xs text-teal-600 font-medium mb-1">Margen neto promedio</p>
           <p class="text-xl font-black text-teal-700">${margenNetoProm.toFixed(1)}%</p>
+        </div>
+      </div>
+
+      <!-- Ingresos Brutos (Santa Fe) -->
+      <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-3">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <h3 class="font-semibold text-gray-700 text-sm">Ingresos Brutos (IIBB, Santa Fe)</h3>
+            <p class="text-xs text-gray-400 mt-0.5">Se calcula sobre la venta bruta, no sobre la utilidad -- por eso pega distinto según el margen de cada venta. No incluye Ganancias ni Impuesto al cheque todavía.</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <label class="text-xs text-gray-500">Alícuota %</label>
+            <input id="iibb-pct" type="number" step="0.01" min="0" value="${iibbPct}"
+              class="w-20 rounded-lg border-gray-300 text-sm" />
+            <button id="btn-guardar-iibb" class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-medium px-3 py-2 rounded-lg">Guardar</button>
+            <span id="iibb-msg" class="hidden text-xs text-green-700"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+            <p class="text-xs text-red-600 font-medium mb-1">IIBB pagado (histórico)</p>
+            <p class="text-xl font-black text-red-700">U$S ${iibbTotal.toFixed(0)}</p>
+          </div>
+          <div class="bg-gray-50 border border-gray-300 rounded-xl p-4 text-center">
+            <p class="text-xs text-gray-600 font-medium mb-1">Utilidad final (post comisión + IIBB)</p>
+            <p class="text-xl font-black text-gray-800">U$S ${utilidadFinalTotal.toFixed(0)}</p>
+            <p class="text-xs text-gray-400">Mes: U$S ${utilidadFinalMes.toFixed(0)}</p>
+          </div>
+          <div class="bg-gray-50 border border-gray-300 rounded-xl p-4 text-center">
+            <p class="text-xs text-gray-600 font-medium mb-1">Margen final promedio</p>
+            <p class="text-xl font-black text-gray-800">${margenFinalProm.toFixed(1)}%</p>
+          </div>
         </div>
       </div>
 
@@ -1981,10 +2025,12 @@ async function renderCalce() {
               <th class="px-3 py-2 text-center">% Com.</th>
               <th class="px-3 py-2 text-right">Comisión</th>
               <th class="px-3 py-2 text-right">Utilidad neta</th>
-              <th class="px-3 py-2 text-right">Margen neto</th>
+              <th class="px-3 py-2 text-right">IIBB</th>
+              <th class="px-3 py-2 text-right">Utilidad final</th>
+              <th class="px-3 py-2 text-right">Margen final</th>
             </tr></thead>
             <tbody>
-              ${[...porCot].sort((a, b) => a.utilidadNeta - b.utilidadNeta).map((c, i) => `
+              ${[...porCot].sort((a, b) => a.utilidadFinal - b.utilidadFinal).map((c, i) => `
                 <tr class="${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
                   <td class="px-3 py-2 font-bold">2026-${String(c.numero).padStart(3,'0')}</td>
                   <td class="px-3 py-2">${c.clientes?.nombre || ''}</td>
@@ -1993,8 +2039,10 @@ async function renderCalce() {
                   <td class="px-3 py-2 text-right text-gray-700">U$S ${c.utilidad.toFixed(2)}</td>
                   <td class="px-3 py-2 text-center text-gray-500">${c.pctComision.toFixed(1)}%</td>
                   <td class="px-3 py-2 text-right text-orange-600">-U$S ${c.comisionUsd.toFixed(2)}</td>
-                  <td class="px-3 py-2 text-right font-bold ${c.utilidadNeta >= 0 ? 'text-green-700' : 'text-red-600'}">U$S ${c.utilidadNeta.toFixed(2)}</td>
-                  <td class="px-3 py-2 text-right ${c.margenNeto < 10 ? 'text-red-500 font-semibold' : 'text-gray-500'}">${c.margenNeto.toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right text-gray-700">U$S ${c.utilidadNeta.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right text-red-500">-U$S ${c.iibb.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right font-bold ${c.utilidadFinal >= 0 ? 'text-green-700' : 'text-red-600'}">U$S ${c.utilidadFinal.toFixed(2)}</td>
+                  <td class="px-3 py-2 text-right ${c.margenFinal < 10 ? 'text-red-500 font-semibold' : 'text-gray-500'}">${c.margenFinal.toFixed(1)}%</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2004,8 +2052,10 @@ async function renderCalce() {
                 <td class="px-3 py-2 text-right text-xs text-gray-300">U$S ${utilidadTotal.toFixed(2)}</td>
                 <td></td>
                 <td class="px-3 py-2 text-right text-xs text-orange-300">-U$S ${comisionTotal.toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-xs ${utilidadNetaTotal >= 0 ? 'text-green-300' : 'text-red-300'}">U$S ${utilidadNetaTotal.toFixed(2)}</td>
-                <td class="px-3 py-2 text-right text-xs text-gray-300">${margenNetoProm.toFixed(1)}%</td>
+                <td class="px-3 py-2 text-right text-xs text-gray-300">U$S ${utilidadNetaTotal.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs text-red-300">-U$S ${iibbTotal.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs ${utilidadFinalTotal >= 0 ? 'text-green-300' : 'text-red-300'}">U$S ${utilidadFinalTotal.toFixed(2)}</td>
+                <td class="px-3 py-2 text-right text-xs text-gray-300">${margenFinalProm.toFixed(1)}%</td>
               </tr>
             </tfoot>
           </table>
@@ -2019,6 +2069,16 @@ async function renderCalce() {
 
     montarMargenPorCategoria()
 
+    document.getElementById('btn-guardar-iibb').addEventListener('click', async () => {
+      const nuevaAlicuota = parseFloat(document.getElementById('iibb-pct').value) || 0
+      const { error } = await supabase.from('configuracion').update({ iibb_pct: nuevaAlicuota, updated_at: new Date().toISOString() }).eq('id', 1)
+      const msg = document.getElementById('iibb-msg')
+      if (error) { alert('Error al guardar: ' + error.message); return }
+      msg.textContent = '✅ Guardado'
+      msg.classList.remove('hidden')
+      setTimeout(() => renderRentabilidad(), 600) // recalcula todo con la alícuota nueva
+    })
+
     window.exportarRentabilidadExcel = () => {
       const filas = [
         [{ v: 'RENTABILIDAD — UTILIDAD CON COMISIÓN DISCRIMINADA', s: ESTILOS.title }],
@@ -2030,10 +2090,12 @@ async function renderCalce() {
           { v: 'Comisión', s: ESTILOS.header }, { v: 'Utilidad neta', s: ESTILOS.header },
           { v: 'T/C', s: ESTILOS.header }, { v: 'Utilidad neta $', s: ESTILOS.header },
           { v: 'Margen neto %', s: ESTILOS.header },
+          { v: `IIBB (${iibbPct}%)`, s: ESTILOS.header }, { v: 'Utilidad final', s: ESTILOS.header },
+          { v: 'Margen final %', s: ESTILOS.header },
         ]
       ]
       const filaIni = filas.length + 1
-      ;[...porCot].sort((a, b) => a.utilidadNeta - b.utilidadNeta).forEach((c, i) => {
+      ;[...porCot].sort((a, b) => a.utilidadFinal - b.utilidadFinal).forEach((c, i) => {
         const row = filas.length + 1
         const est = filaAlt(i)
         filas.push([
@@ -2048,6 +2110,11 @@ async function renderCalce() {
           { v: c.tc_cobro || 1150, t: 'n', s: { ...est, ...ESTILOS.center } },
           { f: `H${row}*I${row}`, t: 'n', s: { ...est, ...ESTILOS.moneyAR } },
           { f: `IF(C${row}=0,0,H${row}/C${row}*100)`, t: 'n', s: { ...est, ...ESTILOS.pct } },
+          // IIBB/Utilidad final/Margen final: valor ya calculado en JS (la alícuota
+          // no vive en una celda de esta hoja), no fórmula.
+          { v: c.iibb, t: 'n', s: { ...est, ...ESTILOS.moneyRed } },
+          { v: c.utilidadFinal, t: 'n', s: { ...est, font: { bold: true }, numFmt: '"U$S "#,##0.00' } },
+          { v: c.margenFinal, t: 'n', s: { ...est, ...ESTILOS.pct } },
         ])
       })
       const filaFin = filas.length
@@ -2060,11 +2127,14 @@ async function renderCalce() {
         { f: `SUM(H${filaIni}:H${filaFin})`, t: 'n', s: ESTILOS.moneyB }, {},
         { f: `SUM(J${filaIni}:J${filaFin})`, t: 'n', s: { font: { bold: true }, ...ESTILOS.moneyAR } },
         { f: `IF(C${filaFin+1}=0,0,H${filaFin+1}/C${filaFin+1}*100)`, t: 'n', s: { font: { bold: true }, ...ESTILOS.pct } },
+        { f: `SUM(L${filaIni}:L${filaFin})`, t: 'n', s: { font: { bold: true }, ...ESTILOS.moneyRed } },
+        { f: `SUM(M${filaIni}:M${filaFin})`, t: 'n', s: { font: { bold: true }, numFmt: '"U$S "#,##0.00' } },
+        { f: `IF(C${filaFin+1}=0,0,M${filaFin+1}/C${filaFin+1}*100)`, t: 'n', s: { font: { bold: true }, ...ESTILOS.pct } },
       ])
       descargarExcel(filas, {
         nombreHoja: 'Rentabilidad',
         nombreArchivo: `DACAR_rentabilidad_${fechaArchivo()}.xlsx`,
-        colWidths: [12, 24, 14, 14, 14, 8, 14, 14, 10, 16, 12]
+        colWidths: [12, 24, 14, 14, 14, 8, 14, 14, 10, 16, 12, 14, 14, 12]
       })
     }
   }
