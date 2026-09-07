@@ -917,8 +917,11 @@ const extLabel = labelExt[extVal] || extVal
 const colorTxt = color ? ` ${color}` : ''
 desc = `${m} ${e}mm | Ext: ${extLabel}${colorTxt} / Int: Foil`
 } else {
-// PR/ZN, PR/CI, PR/PR → exterior es la chapa (ZN/CI/PR), interior es Prepintada
-const extLabel = labelExt[intVal] || intVal
+// PR/ZN, PR/CI, PR/PR → exterior es la chapa (ZN/CI/PR), interior es Prepintada.
+// OJO: acá va extVal (la terminación exterior elegida), no intVal -- el selector
+// de interior queda siempre oculto (ver buildTermOpts) así que intVal es
+// siempre '', y por eso el "Ext:" salía en blanco en vez de "Galvanizada"/"Cincalum".
+const extLabel = labelExt[extVal] || extVal
 const colorTxt = color ? ` ${color}` : ''
 desc = `${m} ${e}mm | Ext: ${extLabel}${colorTxt} / Int: Prepintada`
 }
