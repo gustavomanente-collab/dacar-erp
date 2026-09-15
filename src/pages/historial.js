@@ -19,7 +19,13 @@ export async function renderHistorial(contenedor, perfil) {
         <button id="btn-sync-sheets"
           class="bg-green-700 hover:bg-green-900 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
           📊 Sincronizar con Sheets
-        </button>        <input id="busca-hist" type="text" placeholder="🔍 Buscar por cliente u obra..."
+        </button>
+        ${!esVendedor ? `
+        <button id="btn-export-aprobados"
+          class="bg-indigo-700 hover:bg-indigo-900 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
+          📥 Excel de aprobados (detalle)
+        </button>` : ''}
+        <input id="busca-hist" type="text" placeholder="🔍 Buscar por cliente u obra..."
           class="rounded-lg border-gray-300 shadow-sm text-sm w-64" />
       </div>
       <div class="flex gap-2 mb-4 flex-wrap">
@@ -73,6 +79,112 @@ document.getElementById('btn-sync-sheets').addEventListener('click', async () =>
       btn.disabled = false
     }
   })
+
+  // Excel único con el detalle (costo/utilidad) de TODOS los aprobados juntos,
+  // una fila por ítem -- pensado para levantarlo y armar tablas dinámicas propias.
+  // Oculto para vendedor (mismo criterio que el export individual de cada ppto).
+  document.getElementById('btn-export-aprobados')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-export-aprobados')
+    const textoOriginal = btn.textContent
+    btn.disabled = true
+    btn.textContent = '⏳ Generando...'
+    try {
+      const { data: cots } = await supabase
+        .from('cotizaciones')
+        .select(`*, clientes(nombre, obra)`)
+        .eq('estado', 'aprobada')
+        .order('numero')
+
+      if (!cots?.length) { alert('No hay presupuestos aprobados todavía.'); return }
+
+      const { data: items } = await supabase
+        .from('cotizacion_items')
+        .select('*')
+        .in('cotizacion_id', cots.map(c => c.id))
+
+      const itemsPorCot = {}
+      ;(items || []).forEach(it => { (itemsPorCot[it.cotizacion_id] ||= []).push(it) })
+
+      const sTitle  = { font: { bold: true, sz: 14, color: { rgb: '0F172A' } } }
+      const sHeader = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F172A' } }, alignment: { horizontal: 'center' } }
+      const sCosto  = { font: { color: { rgb: '0369A1' } }, fill: { fgColor: { rgb: 'E0F2FE' } } }
+      const sGray   = { fill: { fgColor: { rgb: 'F8FAFC' } } }
+      const sMoney  = { numFmt: '"U$S "#,##0.00' }
+      const sBold   = { font: { bold: true } }
+
+      const filas = [
+        [{ v: 'DACAR SRL — DETALLE DE PRESUPUESTOS APROBADOS', s: sTitle }],
+        [{ v: `Generado: ${new Date().toLocaleDateString('es-AR')} — ${cots.length} presupuestos`, s: { font: { italic: true, color: { rgb: '888888' } } } }],
+        [],
+        [
+          { v: 'N° Ppto', s: sHeader }, { v: 'Fecha', s: sHeader }, { v: 'Cliente', s: sHeader }, { v: 'Obra', s: sHeader },
+          { v: 'Descripción', s: sHeader }, { v: 'Cant/M²', s: sHeader },
+          { v: 'Costo Unit U$S', s: sHeader }, { v: 'Costo Total U$S', s: sHeader },
+          { v: 'MK %', s: sHeader }, { v: 'Precio Unit U$S', s: sHeader }, { v: 'Venta Total U$S', s: sHeader },
+          { v: 'Utilidad U$S', s: sHeader }, { v: 'Opcional', s: sHeader },
+        ]
+      ]
+
+      let totalCosto = 0, totalVenta = 0, totalUtil = 0
+      let idxFila = 0
+
+      cots.forEach(cot => {
+        const nro = `2026-${String(cot.numero).padStart(3,'0')}`
+        const fecha = new Date(cot.created_at).toLocaleDateString('es-AR')
+        ;(itemsPorCot[cot.id] || []).forEach(it => {
+          let extra = {}
+          try { extra = JSON.parse(it.notas || '{}') } catch (e) {}
+          const esOpc = it.descripcion.includes('[OPCIONAL]')
+          const costo_unit = extra.costo_unit || 0
+          const mk = extra.tipo === 'panel' ? (cot.margen_pct || 30) : extra.tipo === 'flete' ? 10 : 35
+          const cantidad = parseFloat(it.cantidad) || 0
+          const venta_unit = parseFloat(it.precio_unitario) || 0
+          const costo_tot = costo_unit * cantidad
+          const venta_tot = venta_unit * cantidad
+          const utilidad = venta_tot - costo_tot
+          if (!esOpc) { totalCosto += costo_tot; totalVenta += venta_tot; totalUtil += utilidad }
+          const s = idxFila % 2 === 0 ? {} : sGray
+          filas.push([
+            { v: nro, s: { ...s, font: { bold: true } } },
+            { v: fecha, s },
+            { v: cot.clientes?.nombre || '', s },
+            { v: cot.clientes?.obra || '', s },
+            { v: it.descripcion.replace(' [OPCIONAL]', ''), s },
+            { v: cantidad, t: 'n', s },
+            { v: costo_unit, t: 'n', s: { ...sCosto, numFmt: '"U$S "#,##0.00' } },
+            { v: costo_tot, t: 'n', s: { ...sCosto, numFmt: '"U$S "#,##0.00' } },
+            { v: mk + '%', s },
+            { v: venta_unit, t: 'n', s: { ...s, ...sMoney } },
+            { v: venta_tot, t: 'n', s: { ...s, ...sMoney } },
+            { v: utilidad, t: 'n', s: { ...s, numFmt: '"U$S "#,##0.00', font: { color: { rgb: '15803D' } } } },
+            { v: esOpc ? 'SÍ' : '', s },
+          ])
+          idxFila++
+        })
+      })
+
+      filas.push([])
+      filas.push([
+        { v: 'TOTALES (sin opcionales)', s: sBold }, {}, {}, {}, {}, {},
+        { v: totalCosto, t: 'n', s: { ...sBold, ...sMoney } }, {}, {}, {},
+        { v: totalVenta, t: 'n', s: { ...sBold, ...sMoney } },
+        { v: totalUtil, t: 'n', s: { font: { bold: true, color: { rgb: '15803D' } }, numFmt: '"U$S "#,##0.00' } }, {},
+      ])
+
+      const ws = XLSX.utils.aoa_to_sheet(filas)
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 40 }, { wch: 10 },
+        { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 9 }
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Aprobados')
+      XLSX.writeFile(wb, `DACAR_aprobados_detalle_${new Date().toISOString().slice(0,10)}.xlsx`)
+    } finally {
+      btn.disabled = false
+      btn.textContent = textoOriginal
+    }
+  })
+
   let todasLasCots = []
   let filtroEstado = ''
 
